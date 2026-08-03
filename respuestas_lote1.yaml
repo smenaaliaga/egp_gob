@@ -1,0 +1,28 @@
+# Guion de respuestas para rehacer la fase 4 del lote 1 (`--answers-file`).
+#
+# Son TUS respuestas de la corrida del 30/07, con las cuatro que se habían
+# perdido por haberse escrito en texto libre en vez de elegidas de la lista:
+#   · GOBGENER es una base de datos   (acá va por el default recomendado)
+#   · ENTIDAD es una base de datos    (el default era «No sé»: se explicita)
+#   · el servidor es PLATDAT          (ya quedó en project_config.yaml → db.default_server)
+#   · sí a logging por celda          (el default era «no»: se explicita)
+#
+# `default: recommended` cubre el resto porque en todas las demás tarjetas tu
+# respuesta coincidía con la recomendada: excluir las 3 consultas de inspección,
+# dejar las ambigüedades como supuestos, aprobar M-001, excluir los 2 CodeTask
+# sin código y proceder al plan.
+
+default: recommended
+
+answers:
+  # El lote es el mismo de antes: solo este flujo entra ahora.
+  B2-scope:flows:
+    Q-B2-1L: "Proceso Ejecución GC CGR (31 nodos) · PFD-wyxachgCf8TVObWz"
+
+  # El prefijo que arrastró todo: sin esto no se escribe la conexión y los
+  # notebooks salen sin la celda que crea `engine`.
+  B4b:resolve:ENTIDAD:
+    Q-B4b-R-ENTIDAD: "Es una base de datos"
+
+  B5b-cell-logging:
+    Q-B5b-1: "Sí, agregar logging de resultados"

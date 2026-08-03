@@ -1,0 +1,188 @@
+# Configuración de proyecto — `sas-migrator init` lo escribe en la raíz del
+# workspace; queda completarlo. Todo lo específico del cliente/entorno vive
+# aquí; el código del migrador no trae ningún default de infraestructura.
+#
+# Dos niveles, a propósito:
+#   · Las claves ACTIVAS son las que hay que decidir, más la configuración de
+#     LLM que ya sobrevivió una migración real. No son los defaults del
+#     esquema: son lo recomendado.
+#   · Las claves COMENTADAS muestran el default del esquema y solo se
+#     descomentan si el proyecto lo pide. Están acá para que exista una
+#     referencia completa, no porque haya que tocarlas.
+#
+# Toda sección rechaza claves desconocidas: un typo falla al cargar, con el
+# nombre exacto, en vez de ignorarse en silencio.
+#
+# El orden es el de completado: primero lo que bloquea una corrida.
+
+llm:
+  # Backend de Claude: "anthropic" (API directa) o "foundry" (Azure AI
+  # Foundry). `init` lo escribe según la credencial que encuentre en el
+  # entorno o en los .env; cambiarlo a mano exige la key del otro backend.
+  provider: "foundry"
+  # Modelo BASE — el que corre las tareas livianas (matching, docs, análisis).
+  # La traducción y el verificador se atienden aparte, más abajo: un solo
+  # modelo para todo es caro si es grande y flojo si es chico.
+  model: "claude-haiku-4-5"
+  # Modelo por tarea (translation, verify, analysis_reviews, improvements,
+  # matching, mismatch_diagnosis, docs). Ausente la clave, rige `model`.
+  models_by_task:
+    translation: "claude-sonnet-5"
+    verify: "claude-sonnet-5"
+    mismatch_diagnosis: "claude-sonnet-5"
+  # Tope de salida por defecto. 16000 es también el umbral sobre el cual el
+  # cliente pasa a streaming: por debajo la llamada va directa.
+  max_tokens: 16000
+  # Tope de salida por tarea. La traducción de un nodo grande necesita mucho
+  # más que un matching, y quedarse corto no se reintenta: corta con
+  # output_truncated y el nodo se va a la cola humana.
+  # OJO con el techo del modelo: Sonnet 5 y Opus 5 dan 128000 de salida;
+  # Haiku 4.5 corta en 64000. Pedir más que el techo es un error del API.
+  max_tokens_by_task:
+    translation: 128000
+    verify: 32000
+    mismatch_diagnosis: 32000
+  # Razonamiento antes de responder: adaptive | disabled. Ausente NO significa
+  # "sin pensar": no se manda el parámetro y rige el default del modelo, que no
+  # es el mismo entre familias (Haiku 4.5 no piensa; Sonnet 5 / Opus 5 sí).
+  # Los tokens de pensamiento se facturan como salida y cuentan contra
+  # max_tokens. "adaptive" es de la generación 4.6+: Haiku 4.5 lo RECHAZA, por
+  # eso va por tarea y no global.
+  # thinking: adaptive
+  thinking_by_task:
+    translation: adaptive
+    verify: adaptive
+    mismatch_diagnosis: adaptive
+  # Esfuerzo: low | medium | high | xhigh | max. Ausente rige el default del
+  # modelo (high). "xhigh" es el recomendado para código.
+  # OJO: Haiku 4.5 devuelve error si se lo mandás — por eso solo va en las
+  # tareas que corren en Sonnet.
+  # effort: high
+  effort_by_task:
+    translation: xhigh
+    verify: high
+    mismatch_diagnosis: high
+  # Llamadas en paralelo dentro de una fase (análisis por flujo, traducción por
+  # nodo). Lo que queda en disco no depende de este número: cada unidad
+  # persiste su archivo y el ensamblado final es siempre secuencial.
+  max_workers: 4
+  # Solo con provider=foundry: el <resource> de
+  # https://<resource>.services.ai.azure.com — infraestructura, no secreto.
+  # `init` lo copia de ANTHROPIC_FOUNDRY_RESOURCE si está en el entorno.
+  foundry_resource: "bc-pibot"
+  # Las API keys NO van acá (este archivo se commitea): van en .env o en el
+  # entorno — ANTHROPIC_API_KEY / ANTHROPIC_FOUNDRY_API_KEY. Ver .env.example.
+  #
+  # ── Ajustes finos (defaults del esquema; descomentar solo si hace falta) ──
+  # Reintentos por una respuesta mal formada (no valida el esquema).
+  # max_validation_retries: 3
+  # Reintentos de TRANSPORTE (429, 5xx, 529 Overloaded) con backoff que hace el
+  # SDK. Una fase que traduce decenas de nodos durante horas atraviesa ventanas
+  # de sobrecarga del proveedor: el default del SDK (2) corta la corrida.
+  # max_transport_retries: 8
+  # Cómo se obtiene el objeto estructurado: auto | native | tool. Los
+  # workspaces de Foundry sin structured_outputs habilitado necesitan `tool`;
+  # `auto` lo detecta solo y degrada en la primera llamada.
+  # structured_mode: auto
+  # Tope de gasto de la corrida en USD (0 = sin tope). Se evalúa antes de cada
+  # llamada contra el acumulado del trace; al alcanzarlo la corrida corta y
+  # `resume` la retoma tras subir el tope.
+  # max_run_cost_usd: 0.0
+  # Override de la tabla de precios por prefijo de modelo (USD por MTok). Solo
+  # hace falta si tu proveedor factura distinto o el modelo es nuevo.
+  # prices: {}
+  #  claude-opus: {input: 5, output: 25, cache_read: 0.5, cache_write: 6.25}
+
+run:
+  # Valores de las variables macro que el SAS heredaba del entorno (autoexec
+  # del servidor, prompts de EG) y que el .egp por lo tanto no define —
+  # típicamente el período de la corrida. Suben a la celda `parameters` de
+  # cada notebook que las use. Sin valor, el notebook falla al ejecutar
+  # diciendo cuál falta, en vez de correr con un período equivocado.
+  # Después de la fase 2, `doctor` dice cuáles usa ESTE .egp.
+  # Las credenciales (&user, &password) NO van acá: van a os.environ.
+  macro_params: {}
+  #  ANIO: 2024
+  #  TRIM: 4
+
+db:
+  # Servidor SQL Server usado cuando una conexión de db_connections.yaml no
+  # declara el suyo. Sin este valor y sin server en la conexión, conectar
+  # falla con error explícito. Lo necesita la fase 7; las 0-6 corren sin él.
+  default_server: "PLATDAT"
+  # URL SQLAlchemy completa que REEMPLAZA la construcción mssql+pyodbc (BD de
+  # prueba sqlite:///..., LocalDB, otro dialecto). Vacía = flujo normal SQL
+  # Server con AD integrated.
+  connection_url: ""
+  #
+  # ── Ajustes finos (defaults del esquema; descomentar solo si hace falta) ──
+  # default_port: 1433
+  # default_driver: "ODBC Driver 17 for SQL Server"
+  # Confiar en el certificado del servidor sin validarlo (opt-in consciente).
+  # trust_server_certificate: false
+
+translation:
+  # Librerías de terceros que las traducciones pueden importar (además de la
+  # stdlib). Es una LISTA BLANCA, no una lista de dependencias: habilita el
+  # import en el chequeo estático y se lo anuncia al traductor en el prompt.
+  # Lo que hay que instalar para ejecutar los notebooks sale de
+  # output/requirements.txt, que el ensamblador emite con las que se usaron
+  # de verdad. Agregar acá una librería del cliente la habilita.
+  allowed_imports:
+    - matplotlib
+    - numpy
+    - openpyxl
+    - pandas
+    - pyreadstat
+    - requests
+    - scipy
+    - sqlalchemy
+  # Verificador LLM post-chequeo estático (fase 6): compara SAS vs traducción
+  # buscando semántica perdida o cambiada. all = todos los nodos (el costo de
+  # UN nodo mal traducido en producción supera el de verificar los 75),
+  # low = solo los de confianza baja, off = sin verificador.
+  verify: all
+  # ¿Dónde corre el procesamiento por default?
+  #   sql    → en la BD. WORK es un schema temporal del server (tabla temp), no
+  #            memoria del proceso, y solo la lógica PROCEDURAL de un DATA step
+  #            (retain, lag, first./last., do, arrays) baja los datos al
+  #            cliente. Los PROC que dependen del orden de las filas (sort,
+  #            rank, transpose) también se quedan en pandas: una tabla SQL no
+  #            tiene orden.
+  #   pandas → comportamiento histórico: WORK ⇒ DataFrame y cualquier statement
+  #            dentro de un DATA step ⇒ no-SQL. Útil en flujos que de verdad
+  #            trabajan sobre .sas7bdat en disco y no contra un servidor.
+  default_target: sql
+  #
+  # Logging liviano por celda: `_log(...)` al final de las celdas con
+  # resultados importantes + persistencia en output/log/<notebook>.log.
+  # Este flag es solo la RECOMENDACIÓN de la tarjeta B5b de la entrevista; la
+  # decisión que manda es la del usuario ahí, así que rara vez se toca acá.
+  # cell_logging: false
+
+# `{}` = la sección entera va con sus defaults. No se puede borrar la línea ni
+# dejarla sin valor: una sección presente y vacía es `None` para el cargador.
+parser: {}
+  # Ajustes del parser SAS. El set default de engines de BD cubre SAS/ACCESS;
+  # esto es para alias custom del cliente. Al descomentar una clave, sacá el
+  # `{}` de arriba.
+  # Engines adicionales a reconocer en LIBNAME. Ejemplo: ["ODBCLOAD"]
+  # extra_db_engines: []
+  # Engines a excluir del set default (p. ej. uno que el cliente usa para
+  # rutas de archivos y no debe clasificar como BD).
+  # ignore_db_engines: []
+
+audit: {}
+  # Los endpoints que el flujo consulta y las tablas que puebla NO se declaran
+  # acá: la auditoría los lee del propio SAS (el URL= del PROC HTTP y el destino
+  # de PROC APPEND/INSERT/CREATE TABLE). Las reglas de deriva —el traductor
+  # cambió el endpoint, o reemplazó la llamada a la API por un SELECT de la
+  # tabla que esa API debía poblar— corren solas, sin configurar nada.
+  #
+  # Acá va solo lo que el SAS no dice, y los defaults ya sirven — al
+  # descomentar una clave, sacá el `{}` de arriba:
+  # Formas de manejar secretos que aceptas donde el SAS usaba &user/&password.
+  # env_secret_markers: ["os.environ", "dotenv"]
+  # DataFrames cuya inicialización debe verificarse en runtime. Se completa
+  # DESPUÉS de traducir: son nombres que genera la traducción, no el SAS.
+  # runtime_df_checks: []
