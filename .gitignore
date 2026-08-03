@@ -5,7 +5,6 @@
 
 # Derivado: lo reconstruye una corrida (`run`, `resume`) y lo borra `reset`.
 state/
-output/
 
 # Credenciales. El ejemplo (.env.example) sí se versiona; el .env nunca.
 .env
