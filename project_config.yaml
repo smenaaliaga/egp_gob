@@ -30,6 +30,11 @@ llm:
     translation: "claude-sonnet-5"
     verify: "claude-sonnet-5"
     mismatch_diagnosis: "claude-sonnet-5"
+  # Escalada para nodos tercos: agotados los reintentos del modelo base, un
+  # intento extra con el modelo fuerte. Solo paga en los nodos que fallaron
+  # todos sus intentos — el resto sigue en Sonnet.
+  escalation_by_task:
+    translation: "claude-opus-5"
   # Tope de salida por defecto. 16000 es también el umbral sobre el cual el
   # cliente pasa a streaming: por debajo la llamada va directa.
   max_tokens: 16000
@@ -66,6 +71,13 @@ llm:
   # nodo). Lo que queda en disco no depende de este número: cada unidad
   # persiste su archivo y el ensamblado final es siempre secuencial.
   max_workers: 4
+  # Cuánto SAS ve el analista de la fase 2: extracto por nodo y techo del
+  # prompt de un flujo entero. Los defaults viejos (20k/200k) dejaban sin ver
+  # el 30% del código de ESTE proyecto — hasta el 50% en los flujos de 17 a 22
+  # nodos. El análisis ya persistido se hizo con los valores viejos: estos
+  # rigen para cualquier flujo que se vuelva a analizar.
+  analysis_excerpt_chars: 40000
+  analysis_total_chars: 500000
   # Solo con provider=foundry: el <resource> de
   # https://<resource>.services.ai.azure.com — infraestructura, no secreto.
   # `init` lo copia de ANTHROPIC_FOUNDRY_RESOURCE si está en el entorno.
