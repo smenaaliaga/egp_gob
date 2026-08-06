@@ -11,6 +11,7 @@ import argparse, os, subprocess, sys
 
 NOTEBOOKS = [
     'NB-02_proceso_ejecucion_gc_cgr.ipynb',
+    'NB-03_proceso_ejec_gc_dipres.ipynb',
 ]
 
 def main():
