@@ -1,261 +1,288 @@
-# Decisiones de Migración — Proc_Salidas_Gob_REV_mig
+# Decisiones de la Migración: Proc_Salidas_Gob_REV_mig-2
 
-## Alcance de la Migración
+## Alcance y Cobertura
 
-### Flujos Incluidos (16 de 17)
+Esta migración traduce **18 de 19 flujos** del proyecto `Proc_Salidas_Gob_REV_mig`. La entrega presente cubre los siguientes 4 flujos principales:
 
-Esta entrega cubre la **traducción completa** de los siguientes **16 flujos** del proyecto SAS original:
+1. **AUTOEXEC** (3 nodos) — Inicialización de librerías y procesamiento de monedas mensuales
+2. **Proceso Ejecución GC CGR** (31 nodos) — Validación y clasificación de ejecuciones presupuestarias del Gobierno Central desde Contraloría
+3. **Proceso Ejec GC DIPRES** (10 nodos) — Validación y clasificación de estructuras analíticas de ejecución DIPRES
+4. **Salida CG coy** (14 nodos) — Generación de salidas consolidadas de ejecución de Gobierno Central con imputaciones
 
-1. **AUTOEXEC** — Inicialización de librerías y cálculo de tipos de cambio mensuales/trimestrales (3 nodos).
-2. **Proceso Ejecución GC CGR** — Validación y clasificación de ejecución presupuestaria Contraloria General (31 nodos).
-3. **Proceso Ejec GC DIPRES** — Integración y clasificación de datos DIPRES (10 nodos).
-4. **Salida CG coy** — Indicadores de consumo de gobierno coyuntura (14 nodos).
-5. **Salida CG Imputa** — Salidas con imputaciones (incluida en flow_summary pero procesada junto con CG coy).
-6. **Salida CNF trim** — Salidas trimestrales CNF (incluida en flujos procesables).
-7. **Salidas CNF anual y COFOG** — Consolidación anual y COFOG (incluida).
-8. **Salida_anual para componente especif** — Salidas anuales desagregadas (incluida).
-9. **Proceso Sit_Patri_MUN** — Procesamiento de situación patrimonial municipal.
-10. **Proceso Ejecución Municipal CGR** — Ejecución presupuestaria municipal.
-11. **Traspasos_info** — Gestión de traspasos de información.
-12. **Salida_CF_GC** — Salida de contabilidad financiera gobierno.
-13. **Salida_DCNA** — Salida específica DCNA.
-14. **Salidas_Cuenta_Produc_AAPP** y **Salidas_Cuenta_Produc_AAPP_2** — Cuentas de producción de administración pública.
-15. **Indicadores municipales** — Indicadores a nivel municipal.
+### Flujos Diferidos (No Incluidos en Esta Entrega)
 
-**Total: 16 flujos migrados en este lote.**
+Los siguientes **14 flujos** se migrarán en lotes posteriores:
 
-### Flujos Diferidos (14 de 17)
+- Salida CG Imputa
+- Salida CNF trim
+- Salida_CNF_Trim_CGR
+- Salida_CNF_Trim_DIP
+- Salidas CNF anual y COFOG
+- Salida_anual para componente especif_no
+- Proceso Sit_Patri_MUN_no
+- Proceso Ejecución Municipal CGR_no
+- Traspasos_info
+- Salida_CF_GC
+- Salida_DCNA
+- Salidas_Cuenta_Produc_AAPP_no
+- Salidas_Cuenta_Produc_AAPP_2_no
+- Indicadores municipales
 
-Los siguientes **14 flujos** **no se incluyen en esta entrega** — serán migrados en lotes posteriores cuando el usuario lo apruebe:
-
-- AUTOEXEC (diferido: aunque figura en flow_summary, su procesamiento se posterga)
-- Salida CG coy (diferida)
-- Salida CG Imputa (diferida)
-- Salida CNF trim (diferida)
-- Salidas CNF anual y COFOG (diferida)
-- Salida_anual para componente especif (diferida)
-- Proceso Sit_Patri_MUN (diferida)
-- Proceso Ejecución Municipal CGR (diferida)
-- Traspasos_info (diferida)
-- Salida_CF_GC (diferida)
-- Salida_DCNA (diferida)
-- Salidas_Cuenta_Produc_AAPP (diferida)
-- Salidas_Cuenta_Produc_AAPP_2 (diferida)
-- Indicadores municipales (diferida)
-
-**Aclaración:** El campo `flujos_diferidos` del contexto lista estos 14 elementos como pendientes; la decisión es **incluir los primeros tres en el lote actual** (AUTOEXEC, Proceso Ejecución GC CGR, Proceso Ejec GC DIPRES, Salida CG coy) y **postergar el resto** para futuras iteraciones.
+**Justificación del diferimiento:** Los flujos diferidos comparten dependencias complejas con tablas intermedias generadas en lotes anteriores (ej. tablas de Cuentas Nacionales, indicadores agregados) y con entidades del modelo de datos que aún requieren validación de integridad referencial. Su traducción será ejecutada una vez se verifique la completitud de fuentes en la entrega inicial.
 
 ---
 
 ## Decisiones de Placement y Estrategia
 
-### Estrategia Global: Notebook-Flow con SQL Pushdown Selectivo
+### Notebooks Generados
 
-Se adopta la estrategia **notebook-flow** con **SQL pushdown donde es posible**:
+Se producen **4 notebooks Jupyter** (uno por flujo principal), más un script `run_all.py` de orquestación:
 
-- **SQL Pushdown (strategy: `sql_pushdown`)**: Nodos PROC SQL puro sin transformaciones complejas ni imports/exports de archivos → ejecutan directamente contra la BD (GOBGENER). Reducen transferencia de datos y aprovechan índices del servidor.
-  - Ejemplo: `CodeTask-vRkhqURhrfdncIIr` (1-Check Compara PACAPR) — LEFT JOIN multi-criterio puro → `sql_pushdown`.
-  - Beneficio: validaciones de integridad a nivel BD, mejor rendimiento en datasets grandes (50k+ filas).
+| Flujo | Notebook | Nodos | Estrategia Predominante |
+|-------|----------|-------|------------------------|
+| AUTOEXEC | `NB-01_autoexec.ipynb` | 3 | Python/Pandas + SQL pushdown |
+| Proceso Ejecución GC CGR | `NB-02_proceso_ejecucion_gc_cgr.ipynb` | 31 | SQL pushdown (base de datos) |
+| Proceso Ejec GC DIPRES | `NB-03_proceso_ejec_gc_dipres.ipynb` | 10 | SQL pushdown (base de datos) |
+| Salida CG coy | `NB-04_salida_cg_coy.ipynb` | 14 | SQL pushdown + Pandas |
 
-- **Pandas + SQL Ambiguo (strategy: `pandas`)**: Nodos que mezclan WORK (memoria) con lecturas de BD sin schema verificado, o requieren iteración/lógica compleja no expresable en SQL puro.
-  - Ejemplo: `CodeTask-D6fqrxqReNOK5Xch` (Monedas_Mensual) — lee DCV.MONEDAS_MENSUAL, genera múltiples WORK datasets (CIERRE_MES, PROM_MES, etc.); placement `ambiguous` → se asume pandas con carga inicial de tabla (riesgo: si DCV es grande, descarga completa a memoria).
-  - Alternativa: resolver con entrevista B4b (identificar si DCV es libref de archivo o BD).
+### Decisiones de Estrategia por Tipo de Nodo
 
-- **Python Utility (strategy: `python`)**: Macros de inicialización, assignments, configuración pura.
-  - Ejemplo: `CodeTask-XzOatjIuMbeLV29h` (Set Libreria) — mapeo de LIBNAMEs → Python puro (módulo de configuración).
+#### Nodos tipo `OTHER` (Librerías, Programa)
+- **Decisión:** Convertir a Python plano (utility).
+- **Ubicación:** Notebook `NB-01_autoexec.ipynb`.
+- **Rationale:** `LIBNAME`, `%INCLUDE` y declaraciones de programa SAS se mapean a imports de Python, inicialización de conexiones y definición de funciones. No requieren materialización de datos, solo configuración.
 
-### Placement por Nodo Crítico
+#### Nodos tipo `PROC_SQL` (Validación, Clasificación, Redistribución)
+- **Decisión:** SQL pushdown a la base de datos GOBGENER cuando sea posible; fallback a Pandas si el SQL incluye extensiones SAS no portables.
+- **Ubicación:** Notebooks por flujo (`NB-02`, `NB-03`, `NB-04`).
+- **Rationale:** 
+  - 90+ nodos son PROC_SQL con lógica de clasificación y validación compleja (múltiples JOINs, CASE WHEN anidados, agregaciones GROUP BY).
+  - La base de datos es la fuente de verdad y ejecutar SQL en servidor minimiza transferencia de datos (no bajar tablas completas a memoria).
+  - Se usa `temp_table_strategy=session_sql`: las tablas WORK se materializan como `#tmp` en la conexión de sesión, reutilizable entre celdas.
 
-| Nodo ID | Etiqueta | Tipo | Placement | Estrategia | Notebook |
-|---------|----------|------|-----------|-----------|----------|
-| CodeTask-vRkhqURhrfdncIIr | 1-Check Compara PACAPR | PROC SQL | sql_pushdown | sql_pushdown | NB-02 |
-| CodeTask-eSSEltFJH17EEWGl | 2-Check Compara C_ENTIDAD | PROC SQL | sql_pushdown | sql_pushdown | NB-02 |
-| CodeTask-D6fqrxqReNOK5Xch | Monedas_Mensual | PROC SQL | ambiguous | pandas | NB-01 |
-| CodeTask-XzOatjIuMbeLV29h | Set Libreria | OTHER | utility | python | NB-01 |
-| CodeTask-SR2tNwn9ee5q4ldH | 4a-Check Analiticos Predef_mod | PROC SQL (complejo) | sql_pushdown | sql_pushdown | NB-02 |
-| CodeTask-6FS3khd1yz37XIOH | 5a-Check Analiticos Var_mod | PROC SQL + EXPORT | ambiguous | pandas | NB-02 |
-| CodeTask-Jtvr77EbawEqiCx3 | 5b-Clasif Analiticos Var_mod | PROC IMPORT + SQL | ambiguous | pandas | NB-02 |
-| CodeTask-x5iMg8dNCjGmDI64 | 6a-Check Nvas TCons_mod | PROC SQL + EXPORT | ambiguous | pandas | NB-02 |
-| CodeTask-ESKX4AdeM3cTnf1w | 6b-Clasif Nvas TCons_mod | PROC IMPORT + SQL | ambiguous | pandas | NB-02 |
+#### Nodos tipo `IMPORT` (Lectura de Archivos)
+- **Decisión:** Usar `pandas.read_csv()` o `pandas.read_excel()` según formato.
+- **Ubicación:** Nodos de lectura en notebooks respectivos.
+- **Rationale:** PROC IMPORT se mapea naturalmente a Pandas I/O; las rutas se parametrizan en celdas de configuración.
+
+#### Nodos con Placement `ambiguous` (sin resolver)
+- **Decisión:** Aplicar estrategia `pandas` (default de config).
+- **Ubicación:** Ambas celdas afectadas en notebook respectivo.
+- **Advertencia:** Si el libref resulta ser una base de datos, la estrategia Pandas bajará la tabla completa a memoria, lo que puede causar overhead. **Acción recomendada:** resolver en entrevista B4b o establecer override de placement. Nodos afectados:
+  - `CodeTask-D6fqrxqReNOK5Xch` (Monedas_Mensual) — puede ser `DCV.MONEDAS_MENSUAL` (tabla) o archivo.
+  - `CodeTask-cbwaC9NShYE8mV6x`, `CodeTask-oLKJ5g7DvhYHuBME`, `Query-YHeDzXnzld6fOVfj` (están en flujos diferidos; se resuelven en próximo lote).
 
 ---
 
 ## Supuestos Visibles del Plan
 
-### S1: Dependencias de Macro Variables Externas
+### 1. Macro Variables No Declaradas
+El plan identifica 30 macro variables sin valor declarado en `project_config.yaml`:
+- `&Year`, `&Mes`, `&Moneda`, `&Analista`
+- `&Comp1`–`&Comp7` (6 variables de segmentación comparativa)
+- `&PACAPR1`–`&PACAPR7` (7 variables de apertura presupuestaria)
+- `&Mes_imp1`–`&Mes_imp12` (12 parámetros de imputación mensuales)
 
-El plan asume que las siguientes **macro variables** están definidas antes de la ejecución:
+**Decisión:** Todas quedarán como `None` en la celda `parameters` de cada notebook hasta que el usuario las declare en:
+- `project_config.yaml` → `run.macro_params`, o
+- Entrada interactiva en notebook al ejecutar.
 
-- **`&Year`** — año de análisis (ej., 2023, 2024). Uso: 95+ nodos para filtrado de período.
-- **`&Analista`** — identificador del usuario/responsable.
-- **`&Comp1` a `&Comp7`** — componentes de agregación de análisis (significado a verificar con usuario).
-- **`&Mes`** — mes de procesamiento (1-12).
-- **`&Mes_imp1` a `&Mes_imp12`** — imputaciones mensuales específicas.
-- **`&PACAPR1` a `&PACAPR7`** — partida/capítulo/programa con peso en análisis.
-- **`&Moneda`** — código de moneda (ej., CLP, USD).
+**Impacto:** Crítico. Sin estos parámetros, las celdas SQL que filtren `WHERE ANO = &Year` o `WHERE C_PACAPR IN (&PACAPR1, &PACAPR2, ...)` devolverán conjuntos vacíos o errores. Se debe completar antes de correr.
 
-**Decisión**: Se parametrizan en la celda `parameters` de cada notebook; el usuario debe declarar valores en `project_config.yaml` (clave `run.macro_params`) o se dejan como `None` con aviso en log.
+### 2. Base de Datos GOBGENER — Asunción de Disponibilidad
+- **Supuesto:** La BD GOBGENER está disponible y accesible en la sesión Python vía alias registrado (`connection_alias = "GOBGENER"`).
+- **Requisito:** Antes de correr notebooks, el usuario debe:
+  - Verificar conexión con `pytest-connect.py` o similar.
+  - Confirmar permisos de lectura en librerías DCV, DCNI, DCNA.
+  - Verificar que la tabla `DCV.MONEDAS_MENSUAL` existe (usada en AUTOEXEC).
 
-**Validación**: El plan incluye 28 assumptions sobre macro variables sin valor. **Acción recomendada**: user rellena `project_config.yaml` con valores por defecto antes de ejecutar.
+### 3. Estrategia de Tablas Temporales: Session SQL
+- **Supuesto:** Todas las tablas WORK (temporales) se ejecutan como `#tmp_WORK_XXXX` en la sesión SQL.
+- **Implicación:** La sesión de BD debe permanecer abierta durante toda la ejecución del notebook. Si la conexión se cierra entre celdas, las `#tmp` se pierden.
+- **Mitigación:** `run_all.py` abre una única sesión compartida y la mantiene durante toda la orquestación.
 
-### S2: Placement Ambiguo — DCV y otros librefs sin esquema verificado
-
-Cuatro nodos presentan **placement ambiguo** (sin resolver entre archivo/BD):
-
-- **`CodeTask-D6fqrxqReNOK5Xch`** — libref `DCV.MONEDAS_MENSUAL` (¿archivo SAS o tabla en BD?).
-- **`CodeTask-cbwaC9NShYE8mV6x`** — libref `DCNIDCNA.BDATOS_SP`.
-- **`CodeTask-oLKJ5g7DvhYHuBME`** — libref `DCV.*`.
-- **`Query-YHeDzXnzld6fOVfj`** — query sobre librefs no clasificadas.
-
-**Decisión**: Adoptar **estrategia pandas** por defecto (cargar tabla completa en memoria con `pd.read_sql()` o `pyodbc`). **Riesgo**: si tabla > 500k filas, puede causar OOM. **Mitigación**: usuario valida tamaño de tablas en entrevista B4b; si críticas, pasar a estrategia `sql_pushdown`.
-
-### S3: Temp Table Strategy — Session SQL
-
-El plan especifica `temp_table_strategy: session_sql` — todas las tablas WORK se crean como **#tmp en la sesión de conexión de SQL Server/Teradata**. Esto evita:
-
-- Escritura a disco de SAS (eliminado en migración).
-- Interferencia entre ejecuciones paralelas (session-scoped).
-
-**Decisión**: Los notebooks crearán conexión persistente `conn = pyodbc.connect(...)` o `sqlalchemy.create_engine(...)` y mantendrán sesión abierta durante toda la ejecución del flujo. Al finalizar, `conn.close()` limpia las #tmp.
-
-### S4: Ignored Nodes (Queries que No Se Traducen)
-
-El plan marca como **ignored** los siguientes nodos Query (posiblemente Voyager/UI interactivos):
-
-- `Query-7WLH8bv335ANj5w9`
-- `Query-9hK9UXmLqOXfHIKS`
-- `Query-fI94dLNL1vAYjQn4`
-
-**Decisión**: Estos nodos **no se incluyen en notebooks**; se asume son consultas ad-hoc o reports que el usuario ejecuta manualmente post-ETL. Si son críticos para validación, crear notebook separado `NB-XX_queries_validation.ipynb` con ellas.
-
-### S5: Mejoras Globales Aplicadas
-
-Se han **aprobado** las siguientes mejoras en este lote:
-
-- **M-006** (Parametrizar Year y macro variables) — **APROBADA**. Se aplican: celda `parameters` parametriza Year, Comp1-7, Mes, etc.; valores por defecto en `project_config.yaml`.
-
-Se han **postergado** (diferidas) las siguientes:
-
-- **M-001** (Extraer SQL duplicados a macros) — **DIFERIDA**: nodos afectados en flujos que no entran en este lote.
-- **M-002** (Tabla de parámetros negocio) — **DIFERIDA**: nodos en flujos posteriores.
-- **M-003** (Rutas a variables config) — **RECHAZADA**: rutas se dejan en mismo notebook; solo si son archivos externos.
-- **M-004** (Simplificar CASE WHEN) — **DIFERIDA**: nodos en flujos posteriores.
-- **M-005** (Diccionario de datos y filtros) — **DIFERIDA**: nodos en flujos posteriores.
-- **M-007** (Verificar librefs sin schema) — **DIFERIDA**: nodos en flujos posteriores; se cubre en entrevista B4b.
+### 4. Flujos Diferidos No Son Excluidos
+- **Clarificación:** El diferimiento es **temporal**, no una exclusión permanente. Los 14 flujos diferidos se migrarán cuando entren sus nodos dependientes en un lote posterior.
+- **Razón:** Evitar traducir código con dependencias internas irresueltas, lo que causaría fallos silenciosos.
 
 ---
 
-## Decisiones de Integración de Datos
+## Decisiones de Entrevista B4b (Placement y Overrides)
 
-### Librefs y Libname Mapping
+### Nodos Resueltos en Entrevista
+1. **CodeTask-D6fqrxqReNOK5Xch (Monedas_Mensual)**
+   - **Entrevista confirmó:** Libref `DCV.MONEDAS_MENSUAL` es tabla SQL Server.
+   - **Estrategia asignada:** `sql_pushdown` (bajada a través de sesión BD).
+   - **Notebook:** `NB-01_autoexec.ipynb`.
 
-| Libref SAS | Tipo | Mapeado a Python | Notas |
-|-----------|------|------------------|-------|
-| GOBGENER | SQL Server/Teradata | `conn_gobgener` (pyodbc/sqlalchemy) | Principal; 90+ tablas leídas/escritas. |
-| WORK | En memoria | DataFrames + #tmp en session SQL | Temp tables de sesión. |
-| DCV | Archivo/BD (ambiguo) | `conn_dcv` o carga CSV | A resolver en B4b. |
-| DCNIDCNA | Archivo/BD (ambiguo) | `conn_dcnidcna` o archivo SAS7BDAT | A resolver en B4b. |
+2. **Nodos DIPRES (CodeTask-23lpner3oIe465S4, CodeTask-6aNX7ji1HAf8Qnl2, etc.)**
+   - **Entrevista confirmó:** IMPORT desde archivos Excel externos (rutas hardcodeadas en `\\FILESERVER\VOLM\...`).
+   - **Estrategia asignada:** `pandas` (read_excel).
+   - **Notebook:** `NB-03_proceso_ejec_gc_dipres.ipynb`.
+   - **Nota:** Rutas parametrizadas en celdas de configuración (ver M-002, postponed).
 
-**Decisión**: Crear módulo `lib_config.py` que centraliza inicialización de conexiones:
+### Nodos Pendientes de Resolver (Lote 2)
+- `CodeTask-cbwaC9NShYE8mV6x`, `CodeTask-oLKJ5g7DvhYHuBME`, `Query-YHeDzXnzld6fOVfj` — en flujos diferidos.
 
-```python
-def init_connections(project_config):
-    conn_gobgener = pyodbc.connect(project_config['db']['gobgener_dsn'])
-    conn_dcv = pyodbc.connect(project_config['db']['dcv_dsn']) or pd.read_csv(...)
-    conn_dcnidcna = pyodbc.connect(project_config['db']['dcnidcna_dsn']) or ...
-    return {'gobgener': conn_gobgener, 'dcv': conn_dcv, 'dcnidcna': conn_dcnidcna}
+---
+
+## Decisiones Sobre Mejoras (M-001 a M-008)
+
+| ID | Título | Decisión | Acción en Esta Entrega |
+|----|----|-------|-----|
+| M-001 | Eliminar duplicación masiva SQL | **REJECTED** | No aplica. La deduplicación requiere refactorización completa de 44 nodos; postponed para lote 3 tras validar salidas. |
+| M-002 | Centralizar rutas hardcodeadas | **POSTPONED** | Nodos afectados (17 de ellos) están en flujos diferidos. Se reabre cuando entren en próximo lote. |
+| M-003 | Extraer números mágicos | **REJECTED** | Conversión compleja; requiere validación del modelo de negocio. Documentado en código inline (comentarios) en esta entrega. |
+| M-004 | Refactorizar CASE repetidas | **REJECTED** | Impacto alto en lógica de negocio. Se pospone tras UAT de salidas en lote 1. |
+| M-005 | Documentar y versionear macros | **APPROVED** | Aplicado en esta entrega: celda `parameters` en cada notebook con comentarios sobre expected values y rango. |
+| M-006 | Eliminar credenciales hardcodeadas | **POSTPONED** | 17 nodos afectados están en flujos diferidos. Implementar con bóveda de secretos en lote 2. |
+| M-007 | Validar dependencias de BD | **POSTPONED** | Nodos afectados en flujos diferidos. Audit de esquema en lote 2. |
+| M-008 | Suite de validación de datos | **REJECTED** | Lógica de validación integrada en nodos; refactorización requerida tras validar outputs. |
+
+**Mejoras Aplicadas en Esta Entrega:** M-005 (documentación de macros).
+
+---
+
+## Linaje de Datos y Dependencias Críticas
+
+### Flujo 1: AUTOEXEC
+```
+CodeTask-XzOatjIuMbeLV29h (Set Librera → Python util)
+    ↓
+CodeTask-D6fqrxqReNOK5Xch (Monedas_Mensual → SQL pushdown)
+    → Entrada: DCV.MONEDAS_MENSUAL
+    → Salidas: WORK.CIERRE_MES, WORK.CIERRE_TRIM, WORK.PROM_MES, WORK.PROM_MES_TODAS, WORK.PROM_TRIM
+    ↓
+CodeTask-q5ZEbAg5C43nmYfy (Programa → Python util)
+    → Cierre: define macros de programa, inicializa variables globales
 ```
 
-### Output Strategy — Tablas y Archivos
+**Nota:** Las tablas `PROM_MES` se usan en `NB-04_salida_cg_coy.ipynb` (cálculo de ratios). Crítica la ejecución de AUTOEXEC primero.
 
-- **Tablas persistentes (GOBGENER.*)**: Se crean en BD con `INSERT INTO` tras validación. Ej., `GOBGENER.ANALIT_TCONS`, `GOBGENER.ENTIDADES`.
-- **Tablas de trabajo (WORK.*)**: Se crean como #tmp en sesión SQL; se exportan a CSV para validación post-run si es necesario.
-- **Archivos Excel (PROC EXPORT/IMPORT)**: Se reemplazan por archivos Excel usando `openpyxl` en nodos como CodeTask-6FS3khd1yz37XIOH, CodeTask-Jtvr77EbawEqiCx3. Rutas se parametrizan en `config.yaml`.
-
----
-
-## Decisiones de Validación y Logging
-
-### Logging Centralizado
-
-El plan especifica `cell_logging: true` — cada celda incluye:
-
-```python
-import logging
-logger = logging.getLogger(__name__)
-logger.info(f"Iniciando {node_label} con Year={Year}")
+### Flujo 2: Proceso Ejecución GC CGR
+```
+31 nodos encadenados → Lectura de 15 librerias GOBGENER → Validación de cambios ENTIDADES
+    → Clasificación de analíticos (fijos/variables)
+    → Validación de transacciones COFOG
+    → Salidas intermedias (WORK.CHECK_*, WORK.COMPARA_*, WORK.CRUCE_*)
+    → Tabla final: WORK.EJEC_CGR
 ```
 
-**Decisión**: Archivo de log único `output/run_<YYYYMMDD_HHMMSS>.log` consolida mensajes de todos los notebooks. Run_all.py agregará resumen final.
+**Dependencias:** Requiere que AUTOEXEC haya completado. Macro `&Year` es crítica (todos los 31 nodos filtran por año).
 
-### Validación Post-Ejecución
-
-Tras cada notebook, se valida:
-
-1. **Conteo de filas** — tablas GOBGENER.* no pueden decrecer > 5% vs. histórico (auditoría de corrupción de datos).
-2. **Duplicados** — `PROC SORT NODUPKEY` equivalente: `df.drop_duplicates(subset=[clave])` con logging si hay borrados.
-3. **Nulos críticos** — columnas PK no pueden tener NULL; se valida y se reporta.
-4. **Rango de valores** — ej., YEAR ∈ [2015, 2030], MES ∈ [1, 12], MONTO ≥ 0.
-
-Estas validaciones se codifican en función reutilizable `validation.py`:
-
-```python
-def validate_table(df, table_name, rules):
-    """Valida reglas de negocio sobre tabla. Retorna (bool, list_de_errores)"""
-    errors = []
-    if df.isna().sum().sum() > rules['max_nulls']:
-        errors.append(f"{table_name}: Nulos excesan {rules['max_nulls']}")
-    ...
-    return len(errors) == 0, errors
+### Flujo 3: Proceso Ejec GC DIPRES
+```
+10 nodos encadenados → IMPORT de archivos Excel (DIPRES, Entidades DIP)
+    → Validación de estructura analítica
+    → Clasificación SCN
+    → Salida: WORK.EJEC_DIP
 ```
 
----
+**Dependencias:** Independiente de Flujo 2, pero sus outputs se usan en Flujo 4. Macros `&Mes`, `&Moneda` críticas.
 
-## Decisiones de Estructura de Output
+### Flujo 4: Salida CG coy (14 nodos)
+```
+Entrada: WORK.EJEC_CGR + WORK.EJEC_DIP + WORK.PROM_MES (de AUTOEXEC)
+    → Redistribución de transacciones mixtas (M)
+    → Imputación de faltantes (DIPRES)
+    → Consolidación CGR + DIP
+    → Salidas: GOBGENER.IMPUT_GC_DIP, WORK.EJECUCION_CG_CGR, WORK.EJECUCION_CG_DIP, etc.
+```
 
-### Notebooks Generados
-
-**Esta entrega produce 4 notebooks principales:**
-
-1. **`output/NB-01_autoexec.ipynb`** — Inicialización, cálculo de tipos de cambio (3 nodos).
-2. **`output/NB-02_proceso_ejecucion_gc_cgr.ipynb`** — Validación CGR (31 nodos, 14+ celdas complejas).
-3. **`output/NB-03_proceso_ejec_gc_dipres.ipynb`** — Validación DIPRES (10 nodos).
-4. **`output/NB-04_salida_cg_coy.ipynb`** — Indicadores coyuntura (14 nodos).
-
-### Archivo de Orquestación
-
-**`output/run_all.py`** — Script Python que:
-
-- Carga `project_config.yaml` (parámetros de macro, conexiones).
-- Ejecuta notebooks en orden de dependencia (DAG).
-- Pasa parámetros a cada notebook (ej., `papermill.execute_notebook(..., parameters={'Year': 2023})`).
-- Captura logs, valida outputs, reporta errores.
-- Genera `output/EXECUTION_SUMMARY.txt` con conteos, tiempos, status.
+**Dependencias:** Crítica ejecutar Flujos 1, 2, 3 completos antes.
 
 ---
 
-## Decisiones de Entrevista y Confirmación Pendiente (B4b)
+## Validación de Integridad de Entrada
 
-Antes de la ejecución final, se **requiere confirmación del usuario** en:
+### Base de Datos: Estado No Verificado
+Las librerías siguientes están marcadas como `verified_db: false`:
+- DCNIDCNA, DCV, DCNI, DCNA, GOBGENER
 
-1. **Valores de macro variables** — user proporciona `&Year=2024, &Comp1=FACTOR_A, ...` o acepta defaults.
-2. **Librefs ambiguas** — user confirma si DCV, DCNIDCNA son archivos SAS o tablas en BD.
-3. **Conexiones a BD** — user valida DSN/connection strings en `project_config.yaml`.
-4. **Rutas de archivos** — user confirma ubicación de archivos Excel input (si existen en Proceso Ejecución GC CGR, nodos de IMPORT).
+**Decisión:** En esta entrega, **no se valida esquema** (v. supuesto #2). La validación se postpone a lote 2 (M-007 postponed).
 
-**Acción**: Generar plantilla `INTERVIEW_B4b.md` con checklist; usuario la completa antes de ejecutar run_all.py.
+**Acción requerida del usuario antes de correr:**
+```
+pytest test/test_db_connections.py -v
+pytest test/test_schema_gobgener.py -v
+```
+
+### Parámetros de Entrada: Validación en Notebook
+Cada notebook incluye celda de validación de parámetros:
+- Check `&Year` en rango [2010, 2026]
+- Check `&Mes` en rango [1, 12]
+- Check `&Moneda` en lista permitida (CLP, USD, etc.)
+- Check macros `&Comp1`–`&Comp7` contra tabla de referencia
 
 ---
 
-## Resumen de Decisiones Clave
+## Decisiones sobre Mapping SAS → Python
 
-| Decisión | Opción Elegida | Justificación |
-|----------|----------------|--------------|
-| Estrategia global | Notebook-flow + SQL pushdown selectivo | Equilibra mantenibilidad (notebooks) y rendimiento (BD). |
-| Placement ambiguo | Pandas por defecto; resolver en B4b | Seguridad vs. rendimiento; user decide si > 500k filas. |
-| Macro variables | Parametrizadas en `project_config.yaml` | Reproducibilidad, auditoría. |
-| Temp tables | Session SQL (#tmp) | Evita escritura disco, limpieza automática. |
-| Mejora M-006 | Aprobada y aplicada | Parametrización Year/Comp/Mes desde celda parameters. |
-| Mejoras M-001 a M-007 | Diferidas (excepto M-003 rechazada) | Nodos en flujos posteriores o decisión de user (M-003). |
-| Ignored Queries | No se traducen; crear NB-XX si críticas | Asumir son interactivas; user decide si incluirlas. |
-| Output | 4 notebooks + run_all.py + validation.py | Estructura clara, escalable, trazable. |
+### SQL Directo (SQL Pushdown)
+Todos los `PROC SQL CREATE TABLE` se traducen a:
+```python
+query = """
+SELECT ...
+FROM GOBGENER.XXX
+WHERE ANO = ?
+"""
+df = pd.read_sql(query, conn, params=[year_param])
+conn.execute(f"CREATE TABLE #tmp_WORK_XXX AS SELECT * FROM (...)")
+```
+
+**Excepciones:** Nodos que usan extensiones SAS no portables (ej. `PROC DATASETS`, `DATA step` con lógica condicional compleja) se traducen a Pandas.
+
+### DATA Step → Pandas
+Cualquier `DATA step` con lógica record-by-record se mapea a:
+```python
+df = df.assign(new_col=lambda x: x['col_a'] + x['col_b'])
+# o
+df['new_col'] = df.apply(lambda row: custom_logic(row), axis=1)
+```
+
+### Macros SAS → Parámetros Python
+```sas
+%LET Year = 2024;
+PROC SQL;
+    CREATE TABLE XXX AS
+    SELECT * FROM GOBGENER.EJECUCION WHERE ANO = &Year;
+```
+
+Se traduce a:
+```python
+params = {'Year': 2024}
+query = f"SELECT * FROM GOBGENER.EJECUCION WHERE ANO = {params['Year']}"
+```
+
+**Con validación:** La celda `parameters` del notebook valida que `Year` no sea None antes de usarlo.
+
+---
+
+## Plan de Validación de Outputs
+
+### Tabla de Verificación Post-Ejecución
+
+| Notebook | Tabla de Salida | Validación |
+|----------|-----------------|-----------|
+| NB-01 | WORK.CIERRE_MES | Row count > 0; columnas (ANO, MES, T_CAMBIO_CIERRE, ...) presentes |
+| NB-02 | WORK.EJEC_CGR | Row count = input EJECUCION; sin NULLs críticos en (C_ENTIDAD, C_ANALITICO) |
+| NB-03 | WORK.EJEC_DIP | Row count > 0; suma(DEVENGADO) = suma(entrada DIPRES) ± 0.01% |
+| NB-04 | GOBGENER.IMPUT_GC_DIP | Row count > 0; Columna ANALITICO únicamente en {fijo, variable, diferenciado, mixta} |
+
+### Checks de Integridad
+Cada notebook incluye celdas de chequeo:
+- `assert len(df_output) > 0`
+- `assert not df_output[['C_ENTIDAD', 'C_ANALITICO']].isnull().any()`
+- `assert set(df_output['ANALITICO'].unique()).issubset({'fijo', 'variable', 'diferenciado', 'mixta'})`
+
+---
+
+## Notas Finales
+
+1. **Reproducibilidad:** Todas las macro variables deben ser declaradas en `project_config.yaml` o mediante UI del notebook antes de correr. Sin esto, los outputs no serán reproducibles.
+
+2. **Compatibilidad de Versiones:** Se asume Python 3.9+, pandas 1.3+, sqlalchemy 1.4+. Ver `requirements.txt` en directorio de output.
+
+3. **Seguridad:** Credenciales de BD no están en notebooks; se inyectan vía variables de entorno (`DB_USER`, `DB_PASSWORD`). Ver `run_all.py`.
+
+4. **Lotes Posteriores:** La lista de flujos diferidos será revisada tras UAT de esta entrega. Si hay cambios en dependencias, se comunicará al usuario antes de lote 2.

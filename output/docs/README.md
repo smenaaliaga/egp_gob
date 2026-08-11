@@ -1,220 +1,185 @@
-# README: Migración Proc_Salidas_Gob_REV a Python
+# README – Migración Proc_Salidas_Gob_REV_mig-2
 
-## ¿Qué es esta migración?
+## Qué es esta migración
 
-Este proyecto traduce el flujo de procesos SAS **Proc_Salidas_Gob_REV** (Procesos de Salidas del Gobierno) a Python/Jupyter. El sistema calcula indicadores de ejecución presupuestaria consolidada del sector público chileno, procesando datos de la Contraloría General (CGR) y DIPRES, con validaciones, imputaciones y clasificaciones contables que alimentan reportes de coyuntura fiscal y estadísticas financieras.
+Esta migración traduce un conjunto de **18 Process Flows** del proyecto SAS **Proc_Salidas_Gob_REV_mig-2** a **Jupyter Notebooks con Python**. Los flujos originales procesan información presupuestaria y de ejecución de gasto público del Gobierno General chileno, consolidando datos de fuentes como Contraloría General de la República (CGR), DIPRES y bases de datos de estructura analítica (GOBGENER).
 
-La migración entrega **16 flujos migrados** de un total de 17 identificados (1 flujo no migratable), organizados en **11 notebooks ejecutables** siguiendo el orden de dependencias. Los nodos traducidos suman **173 tareas** (DATA STEP, PROC SQL, PROC IMPORT, PROC EXPORT) convertidas a código Python/SQL parametrizado.
+### Alcance de esta entrega
 
-## Alcance de esta entrega
+Esta primera entrega incluye la traducción de **18 flujos migratables** de los 19 totales:
 
-**Flujos migrados en este lote:**
-- AUTOEXEC
-- Proceso Ejecución GC CGR (31 nodos)
-- Proceso Ejec GC DIPRES (10 nodos)
-- Salida CG coy (14 nodos)
-- (+ 7 flujos adicionales con 87 nodos más; ver lista completa abajo)
+- **AUTOEXEC** – Inicialización de librerías y procesamiento de monedas/tipos de cambio
+- **Proceso Ejecución GC CGR** – Validación y clasificación de ejecuciones presupuestarias (CGR)
+- **Proceso Ejec GC DIPRES** – Validación de estructuras analíticas (DIPRES)
+- **Salida CG coy** – Consolidación de ejecución de Gobierno Central de coyuntura (CGR + DIPRES)
+- **Salida CG Aper coy** – Ejecución desagregada por apertura institucional (coyuntura)
+- **Salida CG Imputa** – Imputaciones y consolidación de transacciones mixtas
+- **Salida CNF trim** – Consolidación trimestral de Cuentas Nacionales Financieras
+- **Salida_CNF_Trim_CGR** – CNF trimestral con datos CGR
+- **Salida_CNF_Trim_DIP** – CNF trimestral con datos DIPRES
+- **Salidas CNF anual y COFOG** – Consolidación anual y clasificación COFOG
+- **Salida_anual para componente especif_no** – Agregación anual de componentes específicos
+- **Proceso Sit_Patri_MUN_no** – Situación patrimonial municipal
+- **Proceso Ejecución Municipal CGR_no** – Ejecución municipal (CGR)
+- **Traspasos_info** – Procesamiento de traspasos de información
+- **Salida_CF_GC** – Cuenta Financiera de Gobierno Central
+- **Salida_DCNA** – Salida de Cuentas Nacionales según clasificación DCNA
+- **Salidas_Cuenta_Produc_AAPP_no** – Salida de Cuenta de Producción (AAPP)
+- **Salidas_Cuenta_Produc_AAPP_2_no** – Salida de Cuenta de Producción (AAPP, segunda parte)
 
-**Flujos diferidos (próximo lote):**
-- Salida CG Imputa
-- Salida CNF trim
-- Salidas CNF anual y COFOG
-- Salida_anual para componente especif
-- Proceso Sit_Patri_MUN
-- Proceso Ejecución Municipal CGR
-- Traspasos_info
-- Salida_CF_GC
-- Salida_DCNA
-- Salidas_Cuenta_Produc_AAPP
-- Salidas_Cuenta_Produc_AAPP_2
-- Indicadores municipales
+### Flujos diferidos (no incluidos en esta entrega)
 
-Los flujos diferidos **NO están excluidos**: serán traducidos en entregas posteriores siguiendo el mismo estándar.
+El flujo **Indicadores municipales** se traduce en un lote posterior — su traducción depende de validaciones adicionales en tablas municipales y no está incluida en esta versión.
 
-## Estructura de salida
+## Qué produce esta migración
+
+### Notebooks Jupyter
+
+Se generan **6 notebooks principales** en la carpeta `output/`:
+
+| Notebook | Flujos | Descripción |
+|----------|--------|-------------|
+| `NB-01_autoexec.ipynb` | AUTOEXEC | Inicialización: librerías, constantes, lectura y agregación de monedas mensuales en periodos de cierre y promedio |
+| `NB-02_proceso_ejecucion_gc_cgr.ipynb` | Proceso Ejecución GC CGR | Validación de cambios nomenclatura, enriquecimiento analítico fijo/variable, validación de estructuras y actividades COFOG |
+| `NB-03_proceso_ejec_gc_dipres.ipynb` | Proceso Ejec GC DIPRES | Validación de consistencia analítica DIPRES (entidad, actividad, transferencias) |
+| `NB-04_salida_cg_coy.ipynb` | Salida CG coy, Salida CG Aper coy, Salida CG Imputa | Redistribución de transacciones mixtas, consolidación con imputaciones, ejecución total (muestra + expansión) |
+| `NB-05_salida_cnf_trim.ipynb` | Salida CNF trim, Salida_CNF_Trim_CGR, Salida_CNF_Trim_DIP | Consolidación trimestral de Cuentas Nacionales Financieras por fuente |
+| `NB-06_salidas_adicionales.ipynb` | Salida anual CNF, COFOG, situación patrimonial municipal, ejecución municipal, traspasos, CF_GC, DCNA, Cuenta Producción | Reportes anuales y especializados de análisis coyuntural y estructural |
+
+### Tablas y archivos de salida
+
+Los notebooks generan tablas de trabajo (prefijo `WORK.`) y tablas consolidadas en la librería `GOBGENER`:
+
+- **Salidas consolidadas** (GOBGENER): `IMPUT_GC_DIP`, `IMPUT_GC_DIP_APER`, `EJECUCION_CG`, `EJECUCION_CG_APER`, `EJECUCION_MUNICIPAL`, etc.
+- **Tablas de validación** (WORK): `CHECK_*`, `COMPARA_*` — para auditoria y debugging
+- **Tablas de trabajo** (WORK): `CRUCE_*`, `EJEC_*`, `RATIOS`, `TOTALES` — intermedias para cálculos
+
+### Script de orquestación
+
+**`run_all.py`** – Ejecuta todos los notebooks en orden, con parámetros inyectados:
+
+```bash
+python run_all.py --year 2024 --month 12 --analista "Usuario" --comp1 "COM001" ...
+```
+
+## Estructura del proyecto
 
 ```
 output/
-├── NB-01_autoexec.ipynb              # Librerías, monedas mensuales, variables globales
-├── NB-02_proceso_ejecucion_gc_cgr.ipynb  # Validación CGR: entidades, analíticos, TCONS, estructuras
-├── NB-03_proceso_ejec_gc_dipres.ipynb    # Validación DIPRES (equivalente a CGR, datos DIPRES)
-├── NB-04_salida_cg_coy.ipynb         # Indicadores de consumo de gobierno (coyuntura)
-├── NB-05_*.ipynb                     # (+ 6 notebooks más para flujos restantes)
-├── NB-11_*.ipynb
-├── run_all.py                        # Ejecutor maestro (parametrizable, secuencial)
-├── config.yaml                       # Parámetros: period, year, macro_params
-├── PARAMETROS.py                     # Constantes de negocio (números mágicos, lookups)
-└── docs/
-    ├── readme.md                     # Este documento
-    ├── lineage.md                    # Origen→destino de datos (fuentes, tablas, notebooks)
-    ├── decisions.md                  # Decisiones de alcance, placement, supuestos
-    ├── improvements.md               # Mejoras aprobadas y su aplicación
-    └── runbook.md                    # Operación día a día (cómo correr, verificaciones, fallos)
+├── NB-01_autoexec.ipynb
+├── NB-02_proceso_ejecucion_gc_cgr.ipynb
+├── NB-03_proceso_ejec_gc_dipres.ipynb
+├── NB-04_salida_cg_coy.ipynb
+├── NB-05_salida_cnf_trim.ipynb
+├── NB-06_salidas_adicionales.ipynb
+├── run_all.py
+├── config.yaml          (configuración de rutas, conexiones BD)
+└── utilities.py         (funciones compartidas: logaritmo, conexión BD, etc.)
 ```
 
-## Cómo correr
+## Cómo correr la migración
 
-### 1. Requisitos previos
+### Requisitos
 
-**Software:**
-- Python 3.9+
-- Jupyter (para ejecución interactiva) o papermill (ejecución batch)
-- pandas, numpy, sqlalchemy
-- pymssql o pyodbc (conexión SQL Server/Sybase ASE donde residan GOBGENER, DCV, etc.)
+- **Python 3.9+**
+- **Paquetes Python**:
+  - `pandas` ≥ 1.3
+  - `sqlalchemy` ≥ 1.4
+  - `pyodbc` ≥ 4.0 (para SQL Server)
+  - `jupyter` ≥ 1.0
+  - `numpy` ≥ 1.20
 
-**Base de datos:**
-- Servidor SQL (GOBGENER, DCV librefs mapeadas a bases existentes)
-- Tablas de entrada disponibles: `GOBGENER.EJECUCION`, `GOBGENER.EJEC_DIPRES`, `GOBGENER.MONEDAS_MENSUAL`, etc.
+- **Base de datos**: SQL Server accesible con las siguientes librerías:
+  - `GOBGENER` – Tablas maestras (ENTIDADES, COFOG, diccionarios analíticos)
+  - `DCV` – Tabla MONEDAS_MENSUAL (tipos de cambio)
 
-**Instalación de dependencias:**
+- **Archivos** (según código original):
+  - Rutas de lectura/escritura de archivos (CSV, SAS7BDAT) configuradas en `config.yaml`
+
+### Instalación de dependencias
+
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. Configuración
+### Ejecución interactiva (notebook por notebook)
 
-Editar `config.yaml` con:
-```yaml
-run:
-  year: 2023                    # Año de análisis
-  month: 12                     # Mes (1-12)
-  period: "2023-12"            # Período (YYYY-MM)
-  
-  # Parámetros macro SAS heredados
-  macro_params:
-    Year: 2023
-    Mes: 12
-    Analista: "USUARIO"
-    Comp1: "COMP_A"
-    Comp2: "COMP_B"
-    # ... (Comp3-7, Mes_imp1-12, PACAPR1-7, Moneda, etc.)
-
-database:
-  server: "SERVER_PROD"
-  database: "GOBGENER"
-  user: "${DB_USER}"           # Desde variable de entorno
-  password: "${DB_PASSWORD}"   # Desde variable de entorno
-  driver: "ODBC Driver 17 for SQL Server"
-
-paths:
-  input: "./input"             # Archivos de entrada (Excel, CSV)
-  output: "./output"           # Tablas WORK, archivos generados
-  temp: "./temp"               # Archivos temporales durante ejecución
-  logs: "./logs"               # Logs de ejecución
-```
-
-### 3. Ejecución
-
-**Opción A: Ejecución completa (todos los notebooks)**
-```bash
-python run_all.py --config config.yaml --log-level INFO
-```
-
-**Opción B: Ejecución por lote (flujos específicos)**
-```bash
-python run_all.py --config config.yaml --notebooks NB-01,NB-02,NB-03 --dry-run
-```
-
-**Opción C: Ejecución Jupyter interactiva**
-```bash
-jupyter notebook output/NB-01_autoexec.ipynb
-# Ejecutar celdas en orden; los parámetros se leen de config.yaml
-```
-
-**Opción D: Ejecución batch con papermill**
-```bash
-papermill output/NB-01_autoexec.ipynb output/NB-01_autoexec_run_20231201.ipynb \
-  -p YEAR 2023 -p MES 12
-```
-
-### 4. Validaciones tras ejecución
-
-Tras correr `run_all.py`, verificar:
-
-1. **Logs sin errores críticos:**
-   ```bash
-   tail -100 logs/run_2023-12-01T14-30-45.log | grep -i "error\|failed"
+1. Abrir `NB-01_autoexec.ipynb` en Jupyter
+2. Completar la celda **`parameters`** con los valores del periodo:
+   ```python
+   Year = 2024
+   Mes = 12
+   Analista = "Usuario"
+   Comp1 = "COM001"
+   Comp2 = "COM002"
+   # ... (Comp3 a Comp7, Mes_imp1 a Mes_imp12)
    ```
+3. Ejecutar todas las celdas (`Ctrl+Shift+Enter` o `Run All`)
+4. Repetir para NB-02, NB-03, ... en orden
 
-2. **Tablas generadas en la BD:**
-   ```sql
-   -- Desde SQL Server Management Studio
-   SELECT COUNT(*) FROM GOBGENER.EJECUCION;
-   SELECT COUNT(*) FROM WORK.COMPARA_PACAPR;  -- Si WORK es BD, no tabla en memory
-   ```
+### Ejecución por lote (script `run_all.py`)
 
-3. **Conteos de integridad (WORK temporales):**
-   - `NB-02` debe generar: 52+ tablas CHECK_* (validaciones)
-   - `NB-03` debe generar: 51+ tablas análogas con prefijo _DIP (DIPRES)
-   - `NB-04` debe generar: 64+ tablas EJECUCION_* (distintos formatos/agregaciones)
+```bash
+python run_all.py \
+  --year 2024 \
+  --month 12 \
+  --analista "Usuario" \
+  --comp1 "COM001" --comp2 "COM002" --comp3 "COM003" \
+  --comp4 "COM004" --comp5 "COM005" --comp6 "COM006" --comp7 "COM007" \
+  --mes_imp 1 2 3 4 5 6 7 8 9 10 11 12
+```
 
-4. **Archivos Excel exportados:**
-   ```bash
-   ls -lh output/*.xlsx | wc -l  # Debe ser 4+ (propuestas de clasificación)
-   ```
+**Opción `--dry-run`**: Valida parámetros sin ejecutar notebooks.
 
-## Supuestos y limitaciones
+```bash
+python run_all.py --year 2024 --month 12 --dry-run
+```
 
-### Supuestos visibles
+## Parámetros de ejecución
 
-1. **Macro variables sin valor declarado:** Year, Mes, Comp1-7, Mes_imp1-12, Moneda, Analista, PACAPR1-7.
-   - **Acción:** Declarar en `config.yaml` o pasar como argumentos a `run_all.py`.
-   - **Si no se declaran:** quedarán como `None` en la celda `parameters` del notebook y causarán errores en filtros/cálculos.
+| Parámetro | Tipo | Requerido | Descripción | Ejemplo |
+|-----------|------|-----------|-------------|---------|
+| `--year` | int | Sí | Año fiscal del proceso | 2024 |
+| `--month` | int | Sí | Mes fiscal (1–12) | 12 |
+| `--analista` | str | No | Usuario ejecutor (logging) | "Juan Pérez" |
+| `--comp1..comp7` | str | No | Códigos de comparador de entidades (máx. 7) | "COM001" |
+| `--mes_imp1..mes_imp12` | int | No | Meses a imputar (vacío = sin imputación) | 1 2 3 |
+| `--moneda` | str | No | Moneda de reporte (UF/CLP) | "UF" |
+| `--pacapr1..pacapr7` | str | No | Paquetes de apertura institucional | "PAC001" |
 
-2. **Placement ambiguo en 4 nodos:**
-   - `CodeTask-D6fqrxqReNOK5Xch` (Monedas_Mensual): ¿WORK local o base de datos?
-   - `CodeTask-cbwaC9NShYE8mV6x`, `CodeTask-oLKJ5g7DvhYHuBME`, `Query-YHeDzXnzld6fOVfj`: idem.
-   - **Decisión provisional:** estrategia **pandas** (tabla entera a memoria). **Riesgo:** si la tabla es > 1 GB, falla por memoria.
-   - **Resolución:** revisar libref en el sistema SAS original o editar el notebook para usar `sql_pushdown` (consulta directa en BD).
+## Verificaciones tras ejecutar
 
-3. **Rutas hardcodeadas conservadas:** Archivos Excel de entrada (`\\FILESERVER\VOLM\...`) permanecen como literals en los notebooks.
-   - **Razón:** `M-003` fue rechazada (usuario indicó dejar rutas inline).
-   - **Acción manual:** antes de producción, parametrizar en config.yaml.
+Después de completar la ejecución, **verificar**:
 
-4. **Flujos diferidos (12 flows, ~80 nodos):** NO incluidos en esta entrega.
-   - **Timing:** próxima entrega después de aprobación de este lote.
-   - **Impacto:** reportes de CNF, municipales, situación patrimonial quedan para luego.
+1. ✓ Todos los notebooks finalizaron sin errores (`[Completed]` en cada celda final)
+2. ✓ Tablas en `GOBGENER` se actualizaron:
+   - `SELECT COUNT(*) FROM GOBGENER.EJECUCION_CG WHERE AÑO = 2024`
+   - Debe retornar > 0
+3. ✓ Logs de validación en **últimas celdas** de cada notebook:
+   - `CHECK_TCONS_FALT`: verificar faltantes en TCONS
+   - `CHECK_ANALIT_REV`: verificar cobertura de analíticos
+4. ✓ No hay archivos `.tmp` o `.bak` sin limpiar en `output/`
 
-### Limitaciones de traducción
+## Supuestos visibles de la migración
 
-1. **PROC EXPORT a PC Files Server (OLE DB):** 
-   - SAS original: `OUTFILE= \\FILESERVER\... SERVER=OLEDB`.
-   - Python: pandas.to_excel() + ruta local → requiere post-procesamiento para sincronizar con UNC.
+1. **Placement de estrategia**: Nodos con `placement=ambiguous` (4 nodos en AUTOEXEC y flujos diferidos) se traducen con estrategia **pandas** (descargan tablas enteras a memoria). Si una tabla es muy grande (>1 GB), esto puede saturar RAM — resolver en entrevista B4b asignando `placement=sql_pushdown` explícitamente.
 
-2. **PROC SORT NODUPKEY con DATA STEP complejo:**
-   - SAS: gestión de duplicados durante ordenamiento.
-   - Python: `.drop_duplicates()` post-proceso; puede reordenar filas (lógica equivalente, orden diferente).
+2. **Macro variables sin valor**: Los parámetros `Year`, `Mes`, `Analista`, `Comp1`–`Comp7`, `Mes_imp1`–`Mes_imp12`, `Moneda`, `PACAPR1`–`PACAPR7` se dejan como `None` en la celda `parameters` y deben inyectarse al llamar a `run_all.py` o completarse en el notebook manualmente.
 
-3. **Variables implícitas (_N_, _ERROR_):**
-   - SAS: variables automáticas.
-   - Python: agregadas explícitamente donde se detecte (ej: `_N_ = range(1, len(df)+1)`).
+3. **Temp tables**: Las tablas `WORK.*` se materializan como `#tmp_*` en sesiones SQL transitorias de la conexión de BD. Al cerrar el notebook, se pierden — comportamiento intencionado para limpiar estado entre ejecuciones.
 
-4. **LEFT JOIN sobre múltiples criterios con NULLs:**
-   - SAS: comportamiento NULL en joins bien definido.
-   - Python: pandas.merge() requiere validación adicional de NaN/None si criterios incluyen NULLs.
+4. **Credenciales de BD**: Rutas de conexión SQL Server (servidor, BD) se cargan desde `config.yaml`. Credenciales (`uid`, `pwd`) deben inyectarse como variables de entorno (`DB_USER`, `DB_PASS`) — nunca hardcodearlas en el notebook.
 
-## Diccionario de archivos generados
-
-| Notebook | Flujo SAS | Entrada | Salida (datos) | Propósito |
-|----------|-----------|---------|-----------------|-----------|
-| NB-01 | AUTOEXEC | DCV.MONEDAS_MENSUAL | WORK.CIERRE_MES, PROM_TRIM, etc. | Tipos de cambio, variables globales |
-| NB-02 | Proceso Ejecución GC CGR | GOBGENER.EJECUCION, .ENTIDADES | WORK.COMPARA_*, .CHECK_*, GOBGENER.ANALIT_TCONS | Validación CGR, clasificación contable |
-| NB-03 | Proceso Ejec GC DIPRES | GOBGENER.EJEC_DIPRES, .ENTIDADES | WORK.* (análogas a NB-02) | Equivalente para datos DIPRES |
-| NB-04 | Salida CG coy | WORK.EJECUCION_* | WORK.EJECUCION_CG, RATIOS | Indicadores coyuntura fiscal |
-| NB-05+ | (Flujos diferidos) | (TBD) | (TBD) | (próximo lote) |
+5. **Archivos CSV y SAS7BDAT**: Rutas de importación/exportación hardcodeadas en código original se parametrizan en `config.yaml` — actualizar `input_dir` y `output_dir` según el ambiente destino.
 
 ## Contactos y soporte
 
-- **Responsable técnico:** [NOMBRE PENDIENTE]
-- **Base de datos (GOBGENER):** [CONTACTO BD]
-- **Reportes de error:** Incluir log de `run_all.py` + última celda ejecutada.
-
-## Historial de cambios
-
-| Versión | Fecha | Cambios |
-|---------|-------|---------|
-| 1.0 | 2024-12-XX | Entrega inicial: 11 notebooks, 173 nodos migrados, 16 flujos |
+- **Equipo de datos**: [completar contacto]
+- **DBA para acceso BD**: [completar contacto]
+- **Responsable de proceso**: [completar contacto]
 
 ---
 
-**Nota:** Este README se genera automáticamente desde el plan de migración. Para actualizaciones, editar `config.yaml` o revisar `decisions.md` y `runbook.md`.
+**Versión de migración**: 2.0 (Agosto 2026)  
+**Generado por**: Migration tool (build_translation_plan.py, doc-writer)  
+**Estado**: ✓ Plan aprobado por usuario

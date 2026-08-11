@@ -10,8 +10,7 @@ Generado por gen_run_all.py — no editar a mano; volver a correr el generador.
 import argparse, os, subprocess, sys
 
 NOTEBOOKS = [
-    'NB-02_proceso_ejecucion_gc_cgr.ipynb',
-    'NB-03_proceso_ejec_gc_dipres.ipynb',
+    'NB-04_salida_cg_coy.ipynb',
 ]
 
 def main():

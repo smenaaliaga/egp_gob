@@ -1,284 +1,257 @@
-# Lineaje de Datos — Proc_Salidas_Gob_REV_mig
+# Linaje de datos — Proc_Salidas_Gob_REV_mig-2
 
-## Flujos y Estructura General
+## Descripción general
 
-Este documento describe el flujo de datos (lineage) para la migración **Proc_Salidas_Gob_REV_mig**, que consta de **16 flujos migrables de 17 totales**, organizados en **6 notebooks + 1 utilidad** (run_all.py). Los datos circulan a través de **178 nodos** que transforman fuentes externas (BD GOBGENER, DCV) en salidas de análisis presupuestario para gobierno.
+Este documento detalla el linaje (data lineage) de los **18 flujos migrables** del proyecto Proc_Salidas_Gob_REV_mig-2, mapeando **qué se lee** (fuentes), **qué se produce** (salidas) y **dónde vive cada paso** en los notebooks ejecutables.
 
-La migración abarca cuatro flujos principales de procesamiento (AUTOEXEC, Proceso Ejecución GC CGR, Proceso Ejec GC DIPRES, Salida CG coy) y 12 flujos de salida (análisis, reportes, indicadores). **Flujos diferidos** para lote posterior: AUTOEXEC, Salida CG coy, Salida CG Imputa, Salida CNF trim, Salidas CNF anual y COFOG, Salida_anual para componente especif, Proceso Sit_Patri_MUN, Proceso Ejecución Municipal CGR, Traspasos_info, Salida_CF_GC, Salida_DCNA, Salidas_Cuenta_Produc_AAPP, Salidas_Cuenta_Produc_AAPP_2, Indicadores municipales — **14 flujos no migrados en esta entrega**.
-
----
-
-## Flujos Migrables en Esta Entrega
-
-### 1. AUTOEXEC → `NB-01_autoexec.ipynb`
-
-**Propósito:** Inicialización de referencias a librerías, carga de tipos de cambio mensuales y cálculo de consolidados mensuales/trimestrales.
-
-| Aspecto | Detalle |
-|--------|--------|
-| **Nodos** | 3 nodos (CodeTask-XzOatjIuMbeLV29h, CodeTask-D6fqrxqReNOK5Xch, CodeTask-q5ZEbAg5C43nmYfy) |
-| **Tipos** | OTHER (2), PROC_SQL (1) |
-| **Entrada** | DCV.MONEDAS_MENSUAL (tabla BD: tipos de cambio) |
-| **Salida** | WORK.CIERRE_MES, WORK.CIERRE_TRIM, WORK.PROM_MES, WORK.PROM_MES_TODAS, WORK.PROM_TRIM (5 tablas temporales) |
-| **Dependencias** | Ninguna (flujo raíz) |
-| **Notebook** | NB-01_autoexec.ipynb |
-| **Estrategia** | Python (utility para LIBNAME) + pandas (carga y consolidación de promedios) |
-
-**Descripción del flujo:**
-- Establece referencias a librerías SAS (GOBGENER, DCV).
-- Lee MONEDAS_MENSUAL (divisa, fecha, valor).
-- Calcula promedios mensuales (PROM_MES, PROM_MES_TODAS) y trimestrales (PROM_TRIM) por moneda.
-- Genera cierres de mes y trimestre para análisis de variación de tipos de cambio.
-
-**Salidas utilizadas por:**
-- Proceso Ejecución GC CGR (PROM_MES).
-- Salida CG coy (PROM_MES, CIERRE_MES, CIERRE_TRIM).
+La estructura refleja el output strategy de `notebook-flow`: cada Process Flow (PFD) o ProcessFlowContainer genera un notebook independiente (ej. `NB-01_autoexec.ipynb`, `NB-02_proceso_ejecucion_gc_cgr.ipynb`, etc.), dentro del cual las tareas se organizan en celdas lógicamente secuenciadas.
 
 ---
 
-### 2. Proceso Ejecución GC CGR → `NB-02_proceso_ejecucion_gc_cgr.ipynb`
+## 1. AUTOEXEC (PFD-hy8UZ3ebNxGueabH)
 
-**Propósito:** Validación, clasificación y consolidación de ejecución presupuestaria desde Contraloría General (CGR), detección de cambios organizacionales, imputación de analíticos contables y matrices de estructura.
+**Notebook**: `output/NB-01_autoexec.ipynb`  
+**Nodos**: 3 (1 PROC_SQL, 2 OTHER)  
+**Descripción**: Procesa y transforma datos de monedas y tipos de cambio (diarios) en agregaciones mensuales y trimestrales (cierre y promedio) para análisis de variación de divisas en el gobierno general.
 
-| Aspecto | Detalle |
-|--------|--------|
-| **Nodos** | 31 nodos (combinación de PROC_SQL, DATA_STEP, IMPORT, PROC_OTHER, QUERY) |
-| **Entrada (BD)** | GOBGENER: ANALIT_TCONS, COFOG, CR18_APERTURA, CR18_ENTID_DIP, CR18_ENTID_DIP_Y, CR18_T_SCN_1, CR18_T_SCN_2, EJECUCION, ENTIDADES, EST_EXP_*, EST_MIXTAS_M, EST_MM, COFOG_T_SCN_2 (20 tablas maestras) |
-| **Entrada (WORK)** | ~30 tablas intermedias de control y clasificación |
-| **Salida (BD)** | GOBGENER: ANALIT_TCONS, CR18_APERTURA, CR18_ENTID_DIP, CR18_ENTID_DIP_Y, CR18_T_SCN_1, CR18_T_SCN_2, ENTIDADES, EST_EXP_MGCG, EST_EXP_MGG, EST_EXP_MIXTAS_M, EST_EXP_MM (11 tablas actualizadas) |
-| **Salida (WORK)** | ~50 tablas de análisis, checks, comparaciones y datos procesados |
-| **Dependencias** | AUTOEXEC (PROM_MES) |
-| **Notebook** | NB-02_proceso_ejecucion_gc_cgr.ipynb |
-| **Estrategia** | SQL pushdown + pandas (para checks de duplicados, consolidación) |
+### Fuentes de entrada
+- `DCV.MONEDAS_MENSUAL` — tabla de tasas de cambio/monedas diarias de la biblioteca DCV
 
-**Detalle del flujo de datos:**
+### Tablas/datasets producidos (WORK)
+- `WORK.CIERRE_MES` — cierre mensual de tasas
+- `WORK.CIERRE_TRIM` — cierre trimestral de tasas
+- `WORK.PROM_MES` — promedio mensual
+- `WORK.PROM_MES_TODAS` — promedio mensual de todas las monedas
+- `WORK.PROM_TRIM` — promedio trimestral
 
-**Fase 1 — Detección de cambios organizacionales (nodos 1-3):**
-- CodeTask-vRkhqURhrfdncIIr: EJECUCION ⨝ ENTIDADES → WORK.COMPARA_PACAPR (cambios en partida/capítulo/programa por año).
-- CodeTask-eSSEltFJH17EEWGl: EJECUCION ⨝ ENTIDADES → WORK.COMPARA_ENTIDAD (cambios en estructura por entidad).
-- CodeTask-iE4gTB7hPMNsX4dR: Detección de nuevas entidades sin clasificar (anti-join).
+### Celdas (nodal mapping)
+1. **Celda 0**: `CodeTask-XzOatjIuMbeLV29h` ("Set Libreria") — Inicialización de bibliotecas y parámetros globales
+2. **Celda 1**: `CodeTask-D6fqrxqReNOK5Xch` ("Monedas_Mensual") — PROC SQL que lee DCV.MONEDAS_MENSUAL y produce agregaciones
+3. **Celda 2**: `CodeTask-q5ZEbAg5C43nmYfy` ("Programa") — Bloque Python de validación/logging posterior
 
-**Fase 2 — Clasificación de nuevas entidades (nodo 3b):**
-- CodeTask-19o6EdegIblGxthd: WORK.NUEVAS_ENTIDADES → GOBGENER.ENTIDADES (append FORCE).
-
-**Fase 3a — Analíticos fijos (nodos 4a-4b):**
-- CodeTask-SR2tNwn9ee5q4ldH: CR18_T_SCN_1 ⨝ histórico → WORK.ANALIT_FIJO_CLAS (propone clasificaciones por frecuencia, caso cuenta 07-ítem 02 autocompletado).
-- CodeTask-imoWjgB9c7XBGB5q: Aplica ANALIT_FIJO_CLAS a CR18_T_SCN_1, marca "REV" pendientes, actualiza GOBGENER.CR18_T_SCN_1, genera checks de duplicados.
-
-**Fase 3b — Analíticos variables (nodos 5a-5b):**
-- CodeTask-6FS3khd1yz37XIOH: Detecta analíticos sin clasificación, propone heredando el más frecuente (5 niveles de clave: GORE → resto entidades), exporta a Excel.
-- CodeTask-Jtvr77EbawEqiCx3: Importa clasificación desde Excel, normaliza, anexa a GOBGENER (elimina duplicados).
-
-**Fase 4 — Transacciones consolidables (TCONS) (nodos 6a-6b):**
-- CodeTask-x5iMg8dNCjGmDI64: Detecta transferencias del año sin clasificación (Consolidable/No Consolidable), exporta a Excel.
-- CodeTask-ESKX4AdeM3cTnf1w: Importa clasificación TCONS, normaliza M_MUESTRA, reemplaza en GOBGENER.ANALIT_TCONS.
-
-**Fase 5 — Estructuras de expansión (nodos 7a-7f):**
-- CodeTask-Wil6N97RHUIMSVfs: Detecta analíticos MM sin estructura mensual (EST_EXP_MM), propone expansión, valida ponderaciones ∑=1/mes.
-- CodeTask-kH5fNiMJvLnwyCUU: Detecta MIXTAS_M sin estructura (EST_EXP_MIXTAS_M), propone expansión, valida y anexa.
-- CodeTask-1LH51NVFniO8SFVp: Verifica consistencia: TCONS-MM debe existir en EST_EXP_MM.
-- CodeTask-bYsFTxJS2Uy6FqcG: Verifica consistencia: TCONS-MIXTAS_M debe existir en EST_MIXTAS_M.
-- CodeTask-QeChUmtaSsJfkhiI: Detecta MGCG sin estructura, propone usando ítem '03' como template, permite revisión en Excel.
-- CodeTask-HBcKDsWhhhzfcrxa: Detecta MGG sin estructura, propone y anexa EST_EXP_MGG.
-
-**Fase 6 — Validaciones finales y COFOG (nodos 9-10):**
-- CodeTask-EKp3vGrePAlPMEBt: Entidades sin actividad COFOG del año.
-- CodeTask-Ubk9S5YsiZMvmuUO: Anexa clasificaciones COFOG imputadas.
-- CodeTask-kzhY4l9Rfund2KoE: Detección de transacciones cuentas 24/33 en regiones sin COFOG.
-
-**Salidas críticas para siguiente flujo:**
-- GOBGENER.ANALIT_TCONS, GOBGENER.CR18_T_SCN_1, GOBGENER.CR18_T_SCN_2, GOBGENER.ENTIDADES (maestros actualizados).
-- WORK.ANALIT_FIJO_CLAS, WORK.ANALIT_VAR_CLAS (clasificaciones utilizadas por DIPRES).
+### Observaciones
+- Flujo de **inicialización de sesión**: prepara el WORK con datos de referencia de monedas
+- Las salidas se usan downstream en múltiples flujos de salida (ej. `Salida CG coy`)
 
 ---
 
-### 3. Proceso Ejec GC DIPRES → `NB-03_proceso_ejec_gc_dipres.ipynb`
+## 2. Proceso Ejecución GC CGR (PFD-wyxachgCf8TVObWz)
 
-**Propósito:** Validación y clasificación de ejecución presupuestaria DIPRES (Dirección de Presupuestos), aplicando las clasificaciones de CGR e imputando faltantes.
+**Notebook**: `output/NB-02_proceso_ejecucion_gc_cgr.ipynb`  
+**Nodos**: 31 (20 PROC_SQL, 4 DATA_STEP, 3 QUERY, 2 IMPORT, 2 PROC_OTHER)  
+**Descripción**: Flujo de validación y clasificación de ejecuciones presupuestarias (GOBGENER) que compara cambios en nomenclatura de entidades, partidas y códigos, luego enriquece la matriz de analíticos fijos y variables con propuestas automáticas de clasificación, finalizando con validaciones de estructuras de transferencias consolidables y actividades COFOG.
 
-| Aspecto | Detalle |
-|--------|--------|
-| **Nodos** | 10 nodos (IMPORT, PROC_SQL) |
-| **Entrada (BD)** | GOBGENER: ANALIT_TCONS, CR18_ENTID_DIP_Y, CR18_T_SCN_1, CR18_T_SCN_2, EJEC_DIPRES, ENTIDADES, EST_EXP_MIXTAS_M, EST_EXP_MM (8 maestros) |
-| **Entrada (WORK — de Proceso CGR)** | WORK.ANALIT_*_CLAS, WORK.ANALIT_*_CLAS_*, WORK.ANALIT_*_FALTANTE*, WORK.CHECK_* (20+ tablas de clasificación y validación) |
-| **Salida (BD)** | GOBGENER: ANALIT_TCONS, CR18_ENTID_DIP_Y, CR18_T_SCN_1, CR18_T_SCN_2, EST_EXP_MIXTAS_M, EST_EXP_MM (6 maestros actualizados con variante DIPRES) |
-| **Salida (WORK)** | WORK.EJEC_DIP, WORK.TCONS_EST_DEF_M, ~40 tablas de transacciones clasificadas por tipo y dimensión |
-| **Dependencias** | Proceso Ejecución GC CGR (maestros actualizados y clasificaciones) |
-| **Notebook** | NB-03_proceso_ejec_gc_dipres.ipynb |
-| **Estrategia** | SQL pushdown + pandas (joins masivos de clasificación) |
+### Fuentes de entrada (GOBGENER)
+- `GOBGENER.ANALIT_TCONS` — analíticos consolidables
+- `GOBGENER.COFOG` — clasificación COFOG
+- `GOBGENER.COFOG_T_SCN_2` — mapeo COFOG a SCN
+- `GOBGENER.CR18_APERTURA` — apertura CR18
+- `GOBGENER.CR18_ENTID_DIP` — entidades DIP CR18
+- `GOBGENER.CR18_ENTID_DIP_Y` — entidades DIP CR18 (histórico)
+- `GOBGENER.CR18_T_SCN_1` — mapeo CR18 a SCN nivel 1
+- `GOBGENER.CR18_T_SCN_2` — mapeo CR18 a SCN nivel 2
+- `GOBGENER.EJECUCION` — datos de ejecución presupuestaria de Contraloría
+- `GOBGENER.ENTIDADES` — catálogo de entidades
+- `GOBGENER.EST_EXP_MGCG` — estructura de expansión (MGCG)
+- `GOBGENER.EST_EXP_MGG` — estructura de expansión (MGG)
+- `GOBGENER.EST_EXP_MIXTAS_M` — estructura de expansión (mixtas)
+- `GOBGENER.EST_EXP_MM` — estructura de expansión (MM)
+- `GOBGENER.EST_MIXTAS_M` — estructura mixtas
+- `GOBGENER.EST_MM` — estructura MM
+- Más 40+ datasets WORK intermediarios (cruce, analítico, checks)
 
-**Detalle del flujo:**
-- Lee EJEC_DIPRES (ejecución presupuestaria de DIPRES).
-- Clasifica entidades, actividades, analíticos usando las tablas de clasificación generadas por Proceso CGR.
-- Imputa actividades y analíticos faltantes aplicando reglas de negocio (búsqueda por clave compuesta con fallback).
-- Genera WORK.EJEC_DIP como consolidado de ejecución DIPRES clasificada.
-- Produce matrices de estructura de exposición (EST_EXP_*) con variante DIPRES.
+### Tablas/datasets producidos
+**En GOBGENER** (upsert/actualización):
+- `GOBGENER.ANALIT_TCONS`, `GOBGENER.COFOG`, `GOBGENER.COFOG_T_SCN_2`
+- `GOBGENER.CR18_APERTURA`, `GOBGENER.CR18_ENTID_DIP`, `GOBGENER.CR18_ENTID_DIP_Y`, `GOBGENER.CR18_T_SCN_1`, `GOBGENER.CR18_T_SCN_2`
+- `GOBGENER.ENTIDADES`, `GOBGENER.EST_EXP_MGCG`, `GOBGENER.EST_EXP_MGG`, `GOBGENER.EST_EXP_MIXTAS_M`, `GOBGENER.EST_EXP_MM`
 
-**Salidas utilizadas por:**
-- Salida CG coy (EJEC_DIP, transacciones clasificadas).
+**En WORK** (temporales, 80+ tablas):
+- Tablas de comparación: `WORK.COMPARA_CAPITULO`, `WORK.COMPARA_ENTIDAD`, `WORK.COMPARA_PACAPR`, `WORK.COMPARA_PARTIDA`, `WORK.COMPARA_PROGRAMA` (y variantes `_1`, `_2`)
+- Tablas de analítico: `WORK.ANALIT_FIJO_CLAS`, `WORK.ANALIT_FIJO_CLAS_2`, `WORK.ANALIT_VAR_CLAS`, `WORK.ANALIT_VAR_CLAS_2`–`_5`, `WORK.ANALIT_VAR_CLAS_GORE`, `WORK.ANALIT_VAR_CLAS_RESTO`
+- Tablas de cruce: `WORK.CRUCE_FIJO`, `WORK.CRUCE_FIJO_2`, `WORK.CRUCE_FIJO_MAX`, `WORK.CRUCE_FIJO_MAX_2`, `WORK.CRUCE_PROP` (y variantes 2–5), `WORK.CRUCE_VAR` (y variantes)
+- Tablas CHECK: `WORK.CHECK_ACTIV_ENTID`, `WORK.CHECK_ANALIT_FIJO`, `WORK.CHECK_ANALIT_REV`, `WORK.CHECK_ANALIT_VAR`, `WORK.CHECK_COFOG_ANALIT`, etc. (30+ checks)
+- Otras: `WORK.CR18_APERTURA_PACAPR_BD`, `WORK.EJEC_CGR`, `WORK.ENTID_CGR_YEAR`, `WORK.ENT_N`, `WORK.EST_EXP_M_C`, `WORK.NUEVAS_ENTIDADES`
 
----
+### Celdas (nodal mapping resumido)
+1. **Celda 1**: `CodeTask-vRkhqURhrfdncIIr` — Check Compara PACAPR
+2. **Celda 2**: `CodeTask-eSSEltFJH17EEWGl` — Check Compara C_ENTIDAD
+3. ... (26 celdas más, secuenciadas por dependencia)
+31. **Celda 30**: `CodeTask-R9vRh7beA6yqV7xx` — Query final de consolidación
 
-### 4. Salida CG coy → `NB-04_salida_cg_coy.ipynb`
-
-**Propósito:** Generación de indicadores de consumo de gobierno (coyuntura) a partir de datos de ejecución presupuestaria (CGR + DIPRES), con redistribución de transacciones mixtas y múltiples salidas agregadas.
-
-| Aspecto | Detalle |
-|--------|--------|
-| **Nodos** | 14 nodos (PROC_SQL) |
-| **Entrada (BD)** | GOBGENER: ANALIT_TCONS, CR18_APERTURA, CR18_ENTID_DIP, CR18_ENTID_DIP_Y, CR18_T_SCN_1, CR18_T_SCN_2, EJECUCION, EJEC_DIPRES, ENTIDADES, EST_EXP_MIXTAS_M, EST_MIXTAS_M, IMPUT_GC_DIP, IMPUT_GC_DIP_APER, MOLDE_T_SCN_2, T_SCN_2 (15 maestros) |
-| **Entrada (WORK — de CGR y DIPRES)** | WORK.EJEC_DIP, WORK.EJEC_DIP_Y, WORK.EJEC_EXP_MIXTAS_M_DIP, WORK.EJEC_EXP_MIXTAS_M_DIP_IMP, WORK.PROM_MES, WORK.RATIOS, ~110 tablas de transacciones por tipo (EJECUCION_A, EJECUCION_B, ..., EJECUCION_G) |
-| **Salida (BD)** | GOBGENER: IMPUT_GC_DIP, IMPUT_GC_DIP_APER (2 maestros de imputaciones) |
-| **Salida (WORK)** | WORK.EJECUCION_CG, WORK.EJECUCION_CG_APER, WORK.EJECUCION_CG_CGR, WORK.EJECUCION_CG_DIP (consolid.), WORK.EJECUCION_CG_DIP_IMPUTACIONES, WORK.RATIOS, WORK.TOTALES, WORK.TOTALES_INST (indicadores finales) |
-| **Dependencias** | Proceso Ejecución GC CGR, Proceso Ejec GC DIPRES |
-| **Notebook** | NB-04_salida_cg_coy.ipynb |
-| **Estrategia** | SQL pushdown (agregaciones masivas por dimensión) |
-
-**Detalle del flujo:**
-- Consolida ejecuciones CGR y DIPRES a nivel presupuestario completo (A, B, C, D, F, G — clasificación de gasto).
-- Distribuye transacciones mixtas (MIXTAS_M) entre tipos de ejecución según estructura de ponderación (EST_EXP_MIXTAS_M).
-- Calcula ratios de cobertura y variación respecto a año anterior (WORK.RATIOS, WORK.PROM_MES).
-- Genera indicadores agregados por institución (TOTALES_INST) y consolidado nacional (TOTALES).
-- Materializa salidas en GOBGENER.IMPUT_GC_DIP y GOBGENER.IMPUT_GC_DIP_APER para exportación a reportes.
-
-**Salidas finales (outputs de esta entrega):**
-- WORK.EJECUCION_CG_CGR (ejecución consolidada CGR + imputaciones).
-- WORK.EJECUCION_CG_DIP (ejecución consolidada DIPRES + imputaciones).
-- WORK.RATIOS (indicadores de variación y cobertura).
-- WORK.TOTALES, WORK.TOTALES_INST (agregados para reporting).
+### Observaciones
+- Flujo de **validación y enriquecimiento de vocabulario**: compara cambios de nomenclatura y propone clasificaciones
+- Estrategia: `sql_pushdown` para todos los nodos PROC_SQL (lectura direkt de BD, escritura #tmp de sesión)
+- Dependencia de macro: `Year` (año de proceso)
+- Salidas feeding flujos downstream: `Proceso Ejec GC DIPRES`, `Salida CG coy`, etc.
 
 ---
 
-## Flujos Diferidos (Próximos Lotes)
+## 3. Proceso Ejec GC DIPRES (ProcessFlowContainer-FYwV5olig1EcGaWj)
 
-Los siguientes 14 flujos **no se migran en esta entrega** pero están listados para completitud:
+**Notebook**: `output/NB-03_proceso_ejec_gc_dipres.ipynb`  
+**Nodos**: 10 (6 PROC_SQL, 4 IMPORT)  
+**Descripción**: Proceso de validación y clasificación de estructuras analíticas de ejecución presupuestaria (DIPRES) para asegurar consistencia en actividad, nivel de entidad, y afectación de transacciones según diccionarios institucionales.
 
-1. **AUTOEXEC** (re-aparece): Diferido por validación pendiente de dependencias laterales.
-2. **Salida CG coy**: Diferida (validar orden respecto a Salida CG Imputa).
-3. **Salida CG Imputa**: Imputaciones de gobierno consolidado.
-4. **Salida CNF trim**: Análisis trimestral de resultados no financieros.
-5. **Salidas CNF anual y COFOG**: Consolidado anual y clasificación COFOG.
-6. **Salida_anual para componente especif**: Análisis específico por componente.
-7. **Proceso Sit_Patri_MUN**: Situación patrimonial municipal.
-8. **Proceso Ejecución Municipal CGR**: Ejecución a nivel municipal.
-9. **Traspasos_info**: Información de traspasos entre entidades.
-10. **Salida_CF_GC**: Análisis de flujo de caja.
-11. **Salida_DCNA**: Salida para integración DCNA.
-12. **Salidas_Cuenta_Produc_AAPP**: Cuenta de producción sector AAPP.
-13. **Salidas_Cuenta_Produc_AAPP_2**: Variante adicional.
-14. **Indicadores municipales**: Indicadores agregados por municipio.
+### Fuentes de entrada
+**De GOBGENER**:
+- `GOBGENER.ANALIT_TCONS`, `GOBGENER.CR18_ENTID_DIP_Y`, `GOBGENER.CR18_T_SCN_1`, `GOBGENER.CR18_T_SCN_2`
+- `GOBGENER.EJEC_DIPRES` — ejecución presupuestaria del DIPRES
+- `GOBGENER.ENTIDADES`, `GOBGENER.EST_EXP_MIXTAS_M`, `GOBGENER.EST_EXP_MM`
 
-Estos flujos **dependen de maestros y clasificaciones** generadas en esta entrega pero requieren validación de orden de ejecución y esquemas de salida.
+**De WORK** (45+ tablas intermediarias del flujo anterior):
+- `WORK.ANALIT_ENTIDAD_VAR_D`, `WORK.ANALIT_FIJO_CLAS`, `WORK.ANALIT_FIJO_CLAS_2`, `WORK.ANALIT_FIJO_CLAS_D`, `WORK.ANALIT_FIJO_FALTANTE_D`
+- `WORK.ANALIT_VAR_CLAS` (1–5), `WORK.ANALIT_VAR_CLAS_GORE`, `WORK.ANALIT_VAR_CLAS_RESTO`, `WORK.ANALIT_VAR_CLAS_RESTO_F`
+- `WORK.CHECK_*_DIP` (variantes específicas DIPRES)
+- `WORK.CRUCE_FIJO`, `WORK.CRUCE_FIJO_2`, `WORK.CRUCE_PROP` (2–5), `WORK.CRUCE_VAR` (2–5)
+- `WORK.EJEC_DIP`, `WORK.EST_M`, `WORK.EST_MM`, `WORK.TCONS_EST_DEF_M`
 
----
+### Tablas/datasets producidos
+**En GOBGENER** (upsert):
+- `GOBGENER.ANALIT_TCONS`, `GOBGENER.CR18_ENTID_DIP_Y`, `GOBGENER.CR18_T_SCN_1`, `GOBGENER.CR18_T_SCN_2`
+- `GOBGENER.EST_EXP_MIXTAS_M`, `GOBGENER.EST_EXP_MM`
 
-## Tablas Críticas de Lineage
+**En WORK** (variantes con sufijo `_D` o nuevas):
+- `WORK.ANALIT_ENTIDAD_VAR_D`, `WORK.ANALIT_FIJO_CLAS`, `WORK.ANALIT_FIJO_CLAS_2`, `WORK.ANALIT_FIJO_CLAS_D`, `WORK.ANALIT_FIJO_FALTANTE_D`
+- `WORK.ANALIT_VAR_CLAS` (1–5), `WORK.ANALIT_VAR_CLAS_GORE`, `WORK.ANALIT_VAR_CLAS_RESTO`, `WORK.ANALIT_VAR_CLAS_RESTO_F`
+- `WORK.CHECK_*_DIP` (CHECK_ACTIV_ENTID_DIP, CHECK_ACTIV_ENTID_DIP_2, CHECK_ANALIT_REV, etc.)
+- `WORK.CRUCE_FIJO` (y variantes), `WORK.CRUCE_PROP` (y variantes), `WORK.CRUCE_VAR` (y variantes `_MAX`)
+- `WORK.EJEC_DIP`, `WORK.EST_M`, `WORK.EST_MM`, `WORK.TCONS_EST_DEF_M`
 
-### Maestros (BD GOBGENER)
+### Celdas (nodal mapping resumido)
+1–10: 10 celdas de IMPORT y PROC_SQL, secuenciadas por dependencia de ejecución CGR previa
 
-| Tabla | Fuente | Creada/Actualizada | Consumida Por | Descripción |
-|-------|--------|------------------|---------------|-------------|
-| ENTIDADES | Entrada + Proceso CGR (nodo 3b) | Proceso CGR | Todos | Catálogo de entidades presupuestarias por año |
-| EJECUCION | Entrada CGR | Proceso CGR | Salida CG coy | Ejecución presupuestaria CGR |
-| EJEC_DIPRES | Entrada DIPRES | Proceso DIPRES | Proceso DIPRES, Salida CG coy | Ejecucion presupuestaria DIPRES |
-| ANALIT_TCONS | Entrada + Proceso CGR (nodo 6b) | Proceso CGR, DIPRES | DIPRES, Salida CG coy | Clasificación de transacciones consolidables |
-| CR18_T_SCN_1 | Entrada + Proceso CGR (nodo 4b) | Proceso CGR | DIPRES | Escenarios 1 de clasificación (PACAPR, analíticos fijos) |
-| CR18_T_SCN_2 | Entrada + Proceso CGR (nodo 6b) | Proceso CGR | DIPRES | Escenarios 2 de clasificación (TCONS) |
-| EST_EXP_MM | Entrada + Proceso CGR (nodo 7a) | Proceso CGR | DIPRES, Salida CG coy | Estructura de expansión mensual para MM |
-| EST_EXP_MIXTAS_M | Entrada + Proceso CGR (nodo 7b) | Proceso CGR | DIPRES, Salida CG coy | Estructura de expansión para MIXTAS_M |
-| EST_EXP_MGCG, EST_EXP_MGG | Entrada + Proceso CGR (nodos 7e-7f) | Proceso CGR | DIPRES | Estructuras de exposición por tipo (MGCG, MGG) |
-| COFOG, COFOG_T_SCN_2 | Entrada + Proceso CGR | Proceso CGR | Externos (clasificación funcional) | Clasificación de actividades por COFOG |
-| CR18_ENTID_DIP, CR18_ENTID_DIP_Y | Entrada + Proceso CGR | Proceso CGR | Salida CG coy | Entidades DIPRES y variantes anuales |
-| CR18_APERTURA | Entrada + Proceso CGR | Proceso CGR | Salida CG coy | Apertura de presupuesto (nivel de detalle) |
-| IMPUT_GC_DIP, IMPUT_GC_DIP_APER | Salida CG coy (nodos) | Salida CG coy | Exports/Reporting | Imputaciones de gobierno consolidado |
-
-### Tablas Temporales (WORK)
-
-| Tabla | Origen | Consumida Por | Descripción |
-|-------|--------|---------------|-------------|
-| CIERRE_MES, CIERRE_TRIM, PROM_MES*, PROM_TRIM | AUTOEXEC | Proceso CGR, Salida CG coy | Promedios de tipos de cambio |
-| COMPARA_PACAPR, COMPARA_ENTIDAD | Proceso CGR (nodos 1-2) | Interno (validación) | Comparativas de cambios organizacionales |
-| NUEVAS_ENTIDADES | Proceso CGR (nodo 3a) | Proceso CGR (nodo 3b) | Entidades nuevas detectadas |
-| ANALIT_FIJO_CLAS, ANALIT_FIJO_CLAS_2 | Proceso CGR (nodo 4a) | Proceso CGR (nodo 4b), DIPRES | Clasificación propuesta de analíticos fijos |
-| ANALIT_VAR_CLAS, ANALIT_VAR_CLAS_2-5 | Proceso CGR (nodo 5a) | Proceso CGR (nodo 5b), DIPRES | Clasificación propuesta de analíticos variables (con claves fallback) |
-| ANALIT_FALTANTE, ANALIT_FALTANTE_D | Proceso CGR, DIPRES | Validación de faltantes | Analíticos sin clasificación tras revisión manual |
-| CHECK_* (50+) | Proceso CGR, DIPRES | Auditoría y control de calidad | Tablas de control: duplicados, faltantes, inconsistencias |
-| EJECUCION_A, EJECUCION_B, ..., EJECUCION_G | Proceso DIPRES | Salida CG coy | Transacciones clasificadas por tipo de gasto (7 categorías) |
-| EJEC_DIP, EJEC_DIP_Y | Proceso DIPRES | Salida CG coy | Ejecución DIPRES consolidada y por año |
-| EJEC_EXP_MIXTAS_M_DIP, EJEC_EXP_MIXTAS_M_DIP_IMP | Proceso DIPRES, Salida CG coy | Salida CG coy | Transacciones MIXTAS distribuidas e imputadas |
-| EJECUCION_CG, EJECUCION_CG_CGR, EJECUCION_CG_DIP | Salida CG coy | Exportación | Consolidados de gobierno CGR/DIPRES |
-| RATIOS, TOTALES, TOTALES_INST | Salida CG coy | Exportación/Reporting | Indicadores y agregados finales |
+### Observaciones
+- Flujo **paralelo** a `Proceso Ejecución GC CGR` pero enfocado en fuente DIPRES
+- Reutiliza tablas de clasificación (CR18, ANALIT) pero produce variantes específicas
+- Estrategia: `sql_pushdown` (todas PROC_SQL)
+- Parámetro: `Year`
 
 ---
 
-## Parámetros de Ejecución (Macros SAS → Parámetros Python)
+## 4. Salida CG coy (ProcessFlowContainer-8iloVuuXSe8CJiAb)
 
-Los siguientes parámetros se parametrizan en los notebooks (celda `parameters`):
+**Notebook**: `output/NB-04_salida_cg_coy.ipynb`  
+**Nodos**: 14 (14 PROC_SQL)  
+**Descripción**: Este flujo procesa y redistribuye información de transacciones mixtas (muestra y expansión) desde datos de Contraloría y DIPRES, genera indicadores de consumo de gobierno desagregados por diferentes dimensiones, y produce salidas consolidadas para análisis coyuntural con imputaciones de datos faltantes.
 
-| Parámetro | Tipo | Utilizado Por | Rango/Observación |
-|-----------|------|---------------|------------------|
-| `Year` | INT | Proceso CGR, DIPRES, Salida CG coy | Año de análisis (ej. 2023); filtro clave |
-| `Mes` | INT | Proceso CGR (niveles varios) | Mes específico o agregado (1-12) |
-| `Analista` | STR | Proceso CGR (nodos 5a, 6a, 7a-7f) | Nombre de responsable de revisión manual |
-| `Comp1-7` | STR | Proceso DIPRES, Salida CG coy | Componentes de agregación de gasto |
-| `Mes_imp1-12` | FLOAT | Proceso DIPRES | Factores de imputación por mes |
-| `Moneda` | STR | AUTOEXEC | Código de moneda (ej. USD, CLP); filtro de MONEDAS_MENSUAL |
-| `PACAPR1-7` | STR | Proceso CGR | Códigos de partida/capítulo/programa a procesar |
+### Fuentes de entrada
+**De GOBGENER**:
+- `GOBGENER.ANALIT_TCONS`, `GOBGENER.CR18_APERTURA`, `GOBGENER.CR18_ENTID_DIP`, `GOBGENER.CR18_ENTID_DIP_Y`
+- `GOBGENER.CR18_T_SCN_1`, `GOBGENER.CR18_T_SCN_2`, `GOBGENER.EJECUCION`, `GOBGENER.EJEC_DIPRES`, `GOBGENER.ENTIDADES`
+- `GOBGENER.EST_EXP_MIXTAS_M`, `GOBGENER.EST_MIXTAS_M`, `GOBGENER.IMPUT_GC_DIP`, `GOBGENER.IMPUT_GC_DIP_APER`
+- `GOBGENER.MOLDE_T_SCN_2`, `GOBGENER.T_SCN_2`
 
-**Nota:** Parámetros sin valor declarado en `project_config.yaml` quedan como `None` en la celda `parameters` — el usuario debe completarlos antes de ejecutar o ingresarlos en entrevista B4.
+**De WORK** (150+ tablas intermediarias y outputs de flujos anteriores):
+- Ratios/auxiliares: `WORK.AUX_RATIOS`, `WORK.PROM_MES`
+- Aperturas: `WORK.CR18_APERTURA_PACAPR`, `WORK.CR18_APERTURA_PACAPR_V`
+- Cruces de mixtas: `WORK.CRUCE_EJEC_EXP_MIXTAS_M`, `WORK.CRUCE_EJEC_EXP_MIXTAS_M_DIP`, `WORK.CRUCE_EJEC_EXP_MIXTAS_M_DIP_IMP`
+- Ejecuciones A–G (múltiples variantes): `WORK.EJECUCION_A`, `WORK.EJECUCION_A_APER`, `WORK.EJECUCION_A_DIP`, `WORK.EJECUCION_A_DIP_APER`, `WORK.EJECUCION_A_DIP_APER_IMP`, `WORK.EJECUCION_A_DIP_IMP`, `WORK.EJECUCION_A_PRELIM` (y subvariantes), `WORK.EJECUCION_B` (y variantes), etc.
+- Ejecuciones consolidadas: `WORK.EJECUCION_CG_CGR`, `WORK.EJECUCION_CG_CGR_APER`, `WORK.EJECUCION_CG_CGR_PREV`, `WORK.EJECUCION_CG_DIP`, `WORK.EJECUCION_CG_DIP_APER` (y variantes)
+- Ejecuciones de mixtas: `WORK.EJEC_EXP_MIXTAS_M`, `WORK.EJEC_EXP_MIXTAS_M_DIP`, `WORK.EJEC_EXP_MIXTAS_M_DIP_IMP`, `WORK.EJEC_EXP_MIXTAS_M_PRELIM` (y variantes)
+- Muestra/expansión: `WORK.EJEC_MIXTAS_M_TOTAL`, `WORK.EJEC_MUESTRA_MIXTAS_M`, `WORK.EJEC_MUESTRA_MIXTAS_M_DIP`, etc.
+- Otros: `WORK.CUENTA_ITEM_07`, `WORK.EJEC_DIP`, `WORK.EJEC_DIP_Y`, `WORK.EST_M`, `WORK.EST_MM`, `WORK.RATIOS`, `WORK.TOTALES`, `WORK.TOTALES_INST`
+
+### Tablas/datasets producidos
+**En GOBGENER** (upsert):
+- `GOBGENER.IMPUT_GC_DIP`, `GOBGENER.IMPUT_GC_DIP_APER`
+
+**En WORK** (consolidadas de coyuntura):
+- Consolidadas CGR: `WORK.EJECUCION_CG_CGR`, `WORK.EJECUCION_CG_CGR_APER`, `WORK.EJECUCION_CG_CGR_APER_PREV`, `WORK.EJECUCION_CG_CGR_PREV`
+- Consolidadas DIP: `WORK.EJECUCION_CG_DIP`, `WORK.EJECUCION_CG_DIP_APER`, `WORK.EJECUCION_CG_DIP_APER_IMP`, `WORK.EJECUCION_CG_DIP_APER_PREV`, `WORK.EJECUCION_CG_DIP_IMP`, `WORK.EJECUCION_CG_DIP_IMPUTACIONES`, `WORK.EJECUCION_CG_DIP_IMPUT_PERM`, `WORK.EJECUCION_CG_DIP_PREV`
+- Por transacción (A–G): `WORK.EJECUCION_C`, `WORK.EJECUCION_D`, `WORK.EJECUCION_F`, `WORK.EJECUCION_G` y variantes con `_APER`, `_DIP`, `_DIP_APER`, `_DIP_APER_IMP`, `_DIP_IMP`
+- Mixtas: `WORK.EJEC_EXP_MIXTAS_M`, `WORK.EJEC_EXP_MIXTAS_M_DIP`, `WORK.EJEC_EXP_MIXTAS_M_DIP_IMP`, `WORK.EJEC_EXP_MIXTAS_M_PRELIM` (y variantes)
+- Indicadores: `WORK.AUX_RATIOS`, `WORK.RATIOS`
+- Otros outputs: `WORK.CR18_APERTURA_PACAPR`, `WORK.CR18_APERTURA_PACAPR_V`, `WORK.CRUCE_EJEC_EXP_MIXTAS_M*`, `WORK.CUENTA_ITEM_07`, `WORK.TOTALES`, `WORK.TOTALES_INST`
+
+### Celdas (nodal mapping resumido)
+1. **Celda 4**: `CodeTask-RDZUBeSyggbaTi4d` — TCons Mixtas_M_CGR
+2. **Celda 17**: `CodeTask-99VPAhpFklGwBLLO` — TCons Mixtas_M_DIP_MOD
+3. ... (12 celdas más)
+14. **Celda 245**: `CodeTask-86VdtiWQrF36JEkb` — Aper Ent CG_coy DIP
+
+### Observaciones
+- Flujo **más complejo**: integra CGR, DIPRES, imputaciones y cálculo de indicadores
+- Estrategia: `sql_pushdown` (todas PROC_SQL)
+- Parámetro: `Year`, macro variables de periodos: `Mes`, `Mes_imp1`–`Mes_imp12`
+- Reutiliza tablas de `Proceso Ejecución GC CGR` y `Proceso Ejec GC DIPRES`
+- Produce salidas finales consolidadas para reportería de coyuntura
 
 ---
 
-## Dependencias Entre Notebooks
+## 5–18. Flujos adicionales (DIFERIDOS EN LOTE POSTERIOR)
+
+Los siguientes 14 flujos fueron **identificados pero no traducidos en esta entrega** (listed in `flujos_diferidos`):
+
+1. **Salida CG Imputa** — Imputaciones adicionales de GC
+2. **Salida CNF trim** — Cuentas Nacionales Trimestrales
+3. **Salida_CNF_Trim_CGR** — CNF Trimestral CGR
+4. **Salida_CNF_Trim_DIP** — CNF Trimestral DIPRES
+5. **Salidas CNF anual y COFOG** — CNF Anual y clasificación COFOG
+6. **Salida_anual para componente especif_no** — Salida anual de componentes específicos
+7. **Proceso Sit_Patri_MUN_no** — Situación patrimonial municipal (excluido)
+8. **Proceso Ejecución Municipal CGR_no** — Ejecución municipal de CGR (excluido)
+9. **Traspasos_info** — Traspasos de información
+10. **Salida_CF_GC** — Salida de Contabilidad Financiera GC
+11. **Salida_DCNA** — Salida de DCNA
+12. **Salidas_Cuenta_Produc_AAPP_no** — Cuentas de producción AAPP (excluido)
+13. **Salidas_Cuenta_Produc_AAPP_2_no** — Cuentas de producción AAPP alternativo (excluido)
+14. **Indicadores municipales** — Indicadores municipales
+
+**Estas serán traducidas en lotes posteriores** conforme al plan de migración iterativo.
+
+---
+
+## Matriz de dependencias (dependencias entre flujos)
 
 ```
-NB-01_autoexec
-    ↓ (PROM_MES, CIERRE_MES, CIERRE_TRIM)
-NB-02_proceso_ejecucion_gc_cgr
-    ↓ (ANALIT_*_CLAS, ENTIDADES, CR18_T_SCN_1, CR18_T_SCN_2, EST_EXP_*)
-NB-03_proceso_ejec_gc_dipres
-    ↓ (EJEC_DIP, EJECUCION_A-G, EST_EXP_*)
-NB-04_salida_cg_coy
-    ↓ (RATIOS, TOTALES, TOTALES_INST, EJECUCION_CG_*)
-[Exportación a archivos/BD para reporting]
+AUTOEXEC (NB-01)
+    ↓
+    └─→ Proceso Ejecución GC CGR (NB-02)
+            ↓
+            └─→ Proceso Ejec GC DIPRES (NB-03)
+                    ↓
+                    └─→ Salida CG coy (NB-04) ←─── Tablas de monedas (AUTOEXEC)
 ```
 
-**Ejecutar en orden:** NB-01 → NB-02 → NB-03 → NB-04 (orden secuencial obligatorio).
+**Observación clave**: Los flujos 2, 3 y 4 tienen dependencia secuencial estricta (cada uno consume outputs del anterior). El AUTOEXEC prepara datos de referencia que alimentan el flujo 4 directamente.
 
 ---
 
-## Puntos de Integración Externa
+## Resumen de volumen de datos
 
-### Entrada (Fuentes)
-
-- **BD GOBGENER** (SQL Server / Oracle): Maestros, ejecuciones, clasificaciones históricas.
-- **BD DCV**: Tipos de cambio mensuales.
-- **Archivos Excel** (durante ejecución manual): Clasificaciones propuestas para analíticos variables (nodos 5a, 6a, 7a-7f) — requieren validación y firma de Analista.
-
-### Salida (Consumidores)
-
-- **GOBGENER.IMPUT_GC_DIP, IMPUT_GC_DIP_APER**: Tablas finales persistidas para reportes de coyuntura.
-- **WORK.RATIOS, TOTALES, TOTALES_INST**: Salidas para dashboards/análisis posterior.
-- **Logs y checksums**: Validación de integridad de transformaciones.
+| Aspecto | Conteo |
+|---------|---------|
+| **Flujos migrables** | 4 (en esta entrega) |
+| **Nodos totales** | 58 |
+| **Nodos PROC_SQL** | 44 |
+| **Tablas GOBGENER (lectura)** | ~50 |
+| **Tablas GOBGENER (escritura/upsert)** | ~20 |
+| **Tablas WORK (intermediarias + outputs)** | ~250+ |
+| **Macro parámetros** | ~35 (Year, Comp1–7, Mes, Mes_imp1–12, Moneda, PACAPR1–7, Analista) |
 
 ---
 
-## Notas de Validación y Control de Calidad
+## Convenciones de nomenclatura
 
-1. **Librerías SAS → Python:**
-   - GOBGENER, DCV, WORK (BD y sesión de notebook).
-   - Verificar permisos de acceso y esquema antes de ejecutar.
+- **GOBGENER.\***: Tablas de base de datos persistentes (diccionarios, clasificadores, estructuras)
+- **WORK.\***: Tablas temporales de sesión (intermediarias y outputs del pipeline)
+- **NB-XX_\***: Notebooks numerados secuencialmente, nombrados por flujo SAS
+- **Sufijos**:
+  - `_CGR`: Variante de Contraloría
+  - `_DIP`: Variante de DIPRES
+  - `_APER`: Abierto / desagregado por apertura
+  - `_IMP`: Con imputaciones
+  - `_PRELIM`: Preliminar (consolidación intermedia)
+  - `_MIXTAS_M`: Referido a transacciones mixtas
+  - `_MAX`: Máximo / expansión
 
-2. **Excel Bridge (Nodos 5a-7f):**
-   - Archivos generados en `output/tmp/` para revisión manual.
-   - Usuario debe firmar y volver a ingresar en siguiente nodo.
-   - Sin ingreso manual, tablas quedan con estado "PENDIENTE_REVISION".
+---
 
-3. **Supuestos Críticos:**
-   - MONEDAS_MENSUAL existe y tiene datos del año de análisis.
-   - ENTIDADES maestro incluye todas las combinaciones PACAPR históricas.
-   - Clasificaciones de analíticos fijos/variables son acumulativas (no se sobrescriben).
-   - Estructura de expansión (EST_EXP_MM, EST_EXP_MIXTAS_M) suma 1.0 por grupo.
+## Observaciones finales
 
-4. **Tablas Excluidas (Query nodes ignorados):**
-   - Query-7WLH8bv335ANj5w9, Query-9hK9UXmLqOXfHIKS, Query-fI94dLNL1vAYjQn4: No traducidas en esta entrega.
+1. **Flujos DIFERIDOS** (14 flujos adicionales) no figuran en este linaje; serán documentados en lotes posteriores.
+2. **Estrategia sql_pushdown**: Todos los nodos PROC_SQL usan esta estrategia, minimizando descarga de datos a memoria.
+3. **Macro variables críticas**: `Year`, `Comp*`, `Mes*`, `Moneda`, `PACAPR*` — deben ser inyectadas en la celda `parameters` de cada notebook.
+4. **Interdependencia fuerte**: Los 4 flujos forman un pipeline lineal; cambios en outputs de upstream afectan downstream.
+5. **Volumen de WORK**: ~250+ tablas temporales acumuladas durante ejecución; limpieza de sesión necesaria entre ejecuciones completas.

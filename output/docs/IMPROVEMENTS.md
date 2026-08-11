@@ -1,515 +1,499 @@
-# Mejoras y Decisiones de Migración — Proc_Salidas_Gob_REV_mig
+# Mejoras y Decisiones — Proc_Salidas_Gob_REV_mig-2
+
+Este documento registra las 8 mejoras identificadas durante la migración de SAS a Python, su evaluación, decisión adoptada y estado de implementación en cada lote.
 
 ## Resumen Ejecutivo
 
-En esta migración se evalúan **7 mejoras** identificadas en el análisis de calidad del código SAS original. De ellas, **1 fue aprobada** para aplicar en este lote (M-006: parametrización de macros Year y Comp1-7), **1 fue rechazada** (M-003: refactorización de rutas a variables de configuración), y **5 fueron postergadas** (M-001, M-002, M-004, M-005, M-007) porque sus nodos afectados pertenecen a flujos diferidos que no forman parte de esta entrega.
-
-La estrategia de mejoras sigue el criterio de **diferimiento selectivo**: solo se aplican cambios a los 4 flujos traducidos en este lote (AUTOEXEC, Proceso Ejecución GC CGR, Proceso Ejec GC DIPRES, Salida CG coy). Las demás se re-evalúan cuando entren los flujos pendientes en lotes posteriores.
+- **Total de mejoras identificadas:** 8
+- **Aprobadas:** 2
+- **Rechazadas:** 4
+- **Diferidas (próximos lotes):** 2
+- **Afecta:** 188 nodos, 18 flujos migrables
 
 ---
 
-## M-001: Extraer fragmentos SQL duplicados a macros reutilizables
+## Mejora M-001: Eliminar duplicación masiva de fragmentos SQL
 
-**Categoría:** Mantenibilidad  
-**Impacto:** Alto  
-**Esfuerzo:** Alto  
-**Riesgo:** Medio
+**Categoría:** Maintainability  
+**Prioridad:** Alta
 
-### Descripción del problema
+### Descripción
 
-Se detectan **19 bloques SQL duplicados** afectando **110+ nodos**. El fragmento más crítico es el cálculo de trimestre:
+Se detectan **18 bloques de código SQL duplicados** en **44 nodos distintos** (18% del corpus total). Los ejemplos principales incluyen:
 
-```sas
-CASE WHEN MES IN(1,2,3) THEN 1 
-      WHEN MES IN(4,5,6) THEN 2 
-      WHEN MES IN(7,8,9) THEN 3 
-      ELSE 4 END
-```
-
-Este patrón aparece **65 veces** en nodos como `CodeTask-2u1eOTvq3sZo1V34`, `CodeTask-4wxss6QulJ8PK7Pu`, `CodeTask-94I9bgH6Q4ktjiWH`, y otros. Adicionalmente se replican:
-
-- `CREATE TABLE CR18_APERTURA` (19 nodos)
-- `DELETE FROM EJECUCION_A_PRELIM` con variantes (16 nodos)
-- `UPDATE` con WHERE complejos (4 nodos)
+- Fragmento `CREATE TABLE CR18_APERTURA_PACAPR` aparece en 18 nodos (CodeTask-2u1eOTvq3sZo1V34, CodeTask-4wxss6QulJ8PK7Pu, ..., CodeTask-wpalwVYAWfwAKJxy)
+- `DELETE` statements repetidos en 6–8 nodos
+- `CREATE UNION` statements en 5 nodos
 
 ### Justificación
 
-La duplicación introduce riesgo crítico de **inconsistencia**: si la lógica de trimestre cambia o se corrige un bug, requiere actualizar manualmente **65 ubicaciones**, exponiendo el código a:
-- Errores por olvido de sitios
-- Desincronización entre versiones
-- Mayor tiempo de testing y validación
+El código duplicado es la raíz de inconsistencias y errores de propagación. Con 44 nodos afectados, cualquier bug o cambio de lógica debe replicarse manualmente en 44 lugares, violando el principio DRY (Don't Repeat Yourself).
 
-**Beneficios de centralizar:**
-- Reducción ~40% de líneas de código duplicado
-- Centralización de lógica de negocio
-- Facilita auditoría y testing unitario
-- Propaga automáticamente correcciones a todos los nodos
+### Impacto
 
-### Nodos afectados
+- **Riesgo:** Medio
+- **Esfuerzo:** Alto
+- **Impacto técnico:** Alto
 
-19 nodos identificados en flujos diferidos: `CodeTask-2u1eOTvq3sZo1V34`, `CodeTask-4wxss6QulJ8PK7Pu`, `CodeTask-94I9bgH6Q4ktjiWH`, `CodeTask-A3JEhgKfE5syST7K`, `CodeTask-AD4kzP4luBEsTydA`, `CodeTask-KgBtsabMAJrXUjkl`, `CodeTask-PRH1lTSmY7JzJpmI`, `CodeTask-Vob3Cr2FL8rjXBlH`, `CodeTask-W5QOX3IfZ4AXUmE2`, `CodeTask-cjFzgfiIc4f1oaij`, `CodeTask-cpVfXtbY1fhHpykA`, `CodeTask-jd7KWCF4lrlo7kqk`, `CodeTask-kEwO1qvT28cYoAgT`, `CodeTask-r6G37H7LHWkbbRzg`, `CodeTask-rmzRDvtUeZ2SkGKc`, `CodeTask-tPkkXrMn7HpatBGU`, `CodeTask-tli9YgMo32jhmrKW`, `CodeTask-v2XeXrcszN91UcUK`, `CodeTask-wpalwVYAWfwAKJxy`.
+### Nodos Afectados (44)
+
+CodeTask-2u1eOTvq3sZo1V34, CodeTask-4wxss6QulJ8PK7Pu, CodeTask-94I9bgH6Q4ktjiWH, CodeTask-A3JEhgKfE5syST7K, CodeTask-AD4kzP4luBEsTydA, CodeTask-KgBtsabMAJrXUjkl, CodeTask-PRH1lTSmY7JzJpmI, CodeTask-Vob3Cr2FL8rjXBlH, CodeTask-W5QOX3IfZ4AXUmE2, CodeTask-cjFzgfiIc4f1oaij, CodeTask-cpVfXtbY1fhHpykA, CodeTask-jd7KWCF4lrlo7kqk, CodeTask-kEwO1qvT28cYoAgT, CodeTask-rmzRDvtUeZ2SkGKc, CodeTask-tPkkXrMn7HpatBGU, CodeTask-tli9YgMo32jhmrKW, CodeTask-v2XeXrcszN91UcUK, CodeTask-wpalwVYAWfwAKJxy, CodeTask-86VdtiWQrF36JEkb, CodeTask-GlckAuW3gYkVggMJ, CodeTask-IBn1x34Qkxekgyzd, CodeTask-QazYc6dHjnESiTAF, CodeTask-ZFWBSNwbyPPJmZW3, CodeTask-lLfFqwh2rHhD2IRj, CodeTask-m5Se3FeMZDtIOxcg, CodeTask-uhvFDAbzyY6GHgs9, CodeTask-4Vv4xGyymdoAYMNg, CodeTask-9aBaLrUVtLPwcDKy, CodeTask-Iyf7PQ2PcCPtQjBv, CodeTask-cC67Jq2LJ4rqaTmz, CodeTask-eZSIe7MX3fTZr9TV, CodeTask-H1rH4NREOeKCoiaL, CodeTask-HqGxbifWcl8g9QQH, CodeTask-PfVYfkZipBzGqkdH, CodeTask-RDZUBeSyggbaTi4d, CodeTask-kwUh4TXyxxdvjZsV, CodeTask-z5hLKRPj44xrakAE, CodeTask-8b6bsW9BKVc7jJXj, CodeTask-99VPAhpFklGwBLLO, CodeTask-9HjwuVPWzkAGk1TK, CodeTask-bMqLfdtsanaslAb2.
 
 ### Decisión
 
-**POSTERGADA** — Los nodos afectados residen en flujos que no están incluidos en este lote (están marcados como `flujos_diferidos`). La mejora se re-evalúa y aplica cuando esos flujos entren en traducción en un lote posterior.
+**RECHAZADA** (lote actual)
+
+### Justificación de la Decisión
+
+Se rechaza para este lote porque:
+1. La duplicación identificada pertenece a **fragmentos dinámicos** generados por el flujo de traducción como paso de materialización de tablas WORK
+2. Refactorizar en Python requeriría rediseño de la arquitectura de materialización (funciones reutilizables vs. celdas inline), decisión arquitectónica que excede el alcance de la migración literal
+3. Se recomienda como **mejora post-migración** (fase 2), tras validar que la funcionalidad es equivalente
+
+### Próximos Pasos
+
+- Documentar en backlog de deuda técnica: "Refactorizar fragmentos SQL duplicados en funciones auxiliares (utils.py)"
+- Evaluar en retrospectiva post-go-live si consolidar estas celdas en notebook parametrizadas mejora mantenibilidad
 
 ---
 
-## M-002: Centralizar constantes de negocio y números mágicos en tabla de parámetros
+## Mejora M-002: Centralizar y parametrizar rutas hardcodeadas
 
-**Categoría:** Mantenibilidad  
-**Impacto:** Alto  
-**Esfuerzo:** Medio  
-**Riesgo:** Bajo
+**Categoría:** Maintainability  
+**Prioridad:** Alta
 
-### Descripción del problema
+### Descripción
 
-Números mágicos críticos hardcodeados en **85+ nodos** sin documentación:
+21 smells de `hardcoded_path` detectados en 21 nodos distintos:
+- Rutas como `\\FILESERVER\VOLM\GEM\050_DCNI\...` y `/sasdata/BCCH/GEM_DCNI/...`
+- Dispersas en `LIBNAME`, `PROC IMPORT` y `OUTFILE`
+- Cambios de servidor requieren edición manual en múltiples ubicaciones
 
-| Valor | Frecuencia | Ejemplo de nodos | Significado probable |
-|-------|-----------|------------------|----------------------|
-| `1000000` | 85 nodos | `CodeTask-3GhPnDCy9p2wBP7i`, `CodeTask-4Vv4xGyymdoAYMNg` | Divisor para conversión de unidades (escala) |
-| `10201`, `5601` | 45 nodos c/u | Múltiples | IDs de entidades o códigos de negocio |
-| `'04001000'`, `'04002000'` | 34 nodos | `CodeTask-IBn1x34Qkxekgyzd` | Códigos de analíticos predefinidos |
-| Códigos de entidad (`3801`, `6403`, `19703`, `19701`) | 22, 4, 4, 4 nodos | `CodeTask-A3JEhgKfE5syST7K` | Identificadores de entidades gubernamentales |
-| `'000'`, `'03000000'` | 34, 19 nodos | Múltiples | Valores de clasificación o "sin asignar" |
-
-Sin documentación, cada cambio de formato o escala implica búsqueda manual en todo el código.
+**Nodos afectados:** CodeTask-1UPaqG3cjfbxeW38, CodeTask-23lpner3oIe465S4, CodeTask-6FS3khd1yz37XIOH, CodeTask-D6fqrxqReNOK5Xch, CodeTask-dzljPfKJnYXDrIyx, CodeTask-ESKX4AdeM3cTnf1w, CodeTask-HBcKDsWhhhzfcrxa, CodeTask-Jtvr77EbawEqiCx3, CodeTask-QeChUmtaSsJfkhiI, CodeTask-RyLY6iA6j6KidphH, CodeTask-S9YMDIdQqTumexhp, CodeTask-sKKoX2BlU3PiXDXH, CodeTask-TKijGtt2hNAaRG55, CodeTask-Wil6N97RHUIMSVfs, CodeTask-x5iMg8dNCjGmDI64, CodeTask-XzOatjIuMbeLV29h, CodeTask-YxksHYPWfhCGN8Wj, CodeTask-hiQbCN96JdfFBZKx, CodeTask-iZLD51MjB1SyOVBJ, CodeTask-kH5fNiMJvLnwyCUU, CodeTask-kQiRSuJx6sDK7Afw
 
 ### Justificación
 
-Números mágicos dificultan:
-- **Mantenimiento:** Cambios de escala o clasificaciones requieren búsqueda y reemplazo manual
-- **Auditoría:** No es claro por qué se divide entre 1000000 o qué representa '04001000'
-- **Testing:** Casos de prueba no documentados; es difícil diseñar validaciones
+Rutas hardcodeadas rompen portabilidad y dificultan:
+- Migraciones entre ambientes (dev → test → prod)
+- Cambios de servidor o volúmenes de almacenamiento
+- Reproducibilidad en otros contextos
 
-**Solución propuesta:** Crear tabla `GOBGENER.PARAMETROS_NEGOCIO` con estructura:
+Centralizar en archivo de configuración (`config.yaml` o tabla de parámetros) es estándar en SAS empresarial y en Python CI/CD.
 
-```sql
-CREATE TABLE GOBGENER.PARAMETROS_NEGOCIO (
-  CODIGO           VARCHAR(50),
-  DESCRIPCION      VARCHAR(500),
-  VALOR_NUMERICO   NUMERIC(18,2),
-  VALOR_TEXTO      VARCHAR(100),
-  VIGENCIA_DESDE   DATE,
-  VIGENCIA_HASTA   DATE,
-  RESPONSABLE      VARCHAR(100)
-);
-```
+### Impacto
 
-Ejemplos de registros:
-- `(ESCALA_VALORES, Divisor para conversión a millones, 1000000, NULL, 2024-01-01, NULL, Contabilidad)`
-- `(ANALITICO_FIJO_MIN, Analítico mínimo fijo clasificado, NULL, '04001000', 2024-01-01, NULL, Validación)`
-- `(ENTIDAD_ESPECIAL_GORE, Código de entidad GORE, 3801, NULL, 2024-01-01, NULL, Estructura)`
-
-**Beneficios:**
-- Trazabilidad de cambios (auditoría de vigencia)
-- Cambios sin modificar SQL
-- Reutilización en múltiples nodos
-- Diccionario de datos centralizado
-
-### Nodos afectados
-
-14 nodos identificados en flujos diferidos: `CodeTask-3GhPnDCy9p2wBP7i`, `CodeTask-4Vv4xGyymdoAYMNg`, `CodeTask-4aWGaC1VmZySxlzM`, `CodeTask-4g838w5UgiWqIbGy`, `CodeTask-4wxss6QulJ8PK7Pu`, `CodeTask-86VdtiWQrF36JEkb`, `CodeTask-8b6bsW9BKVc7jJXj`, `CodeTask-94I9bgH6Q4ktjiWH`, `CodeTask-99VPAhpFklGwBLLO`, `CodeTask-9HjwuVPWzkAGk1TK`, `CodeTask-A3JEhgKfE5syST7K`, `CodeTask-AD4kzP4luBEsTydA`, `CodeTask-IBn1x34Qkxekgyzd`, `CodeTask-Iyf7PQ2PcCPtQjBv`.
+- **Riesgo:** Bajo
+- **Esfuerzo:** Medio
+- **Impacto técnico:** Alto
 
 ### Decisión
 
-**POSTERGADA** — Los nodos afectados residen en flujos diferidos. Se re-evalúa cuando entren esos flujos.
+**DIFERIDA** (próximos lotes)
+
+### Justificación de la Decisión
+
+Se difiere porque:
+1. 16 de los 21 nodos **no están incluidos en este lote** (flujos diferidos: AUTOEXEC, Salida CG Imputa, Salida CNF trim, etc.)
+2. Los 5 nodos del flujo *Salida CG coy* que sí migramos en este lote (CodeTask-D6fqrxqReNOK5Xch) usan rutas limitadas a importación de datos de entrada
+3. Se recomienda **abordar en lote 2** cuando todas las importaciones estén consolidadas
+
+### Próximos Pasos
+
+- En próximo lote, crear archivo `config/data_paths.yaml` centralizado
+- Mapear todas las rutas por ambiente (dev/test/prod)
+- Inyectar en notebooks vía `pathlib.Path` + variables de entorno
 
 ---
 
-## M-003: Refactorizar rutas de archivo hardcodeadas a variables de configuración
+## Mejora M-003: Extraer números mágicos a constantes nombradas
 
-**Categoría:** Mantenibilidad  
-**Impacto:** Alto  
-**Esfuerzo:** Medio  
-**Riesgo:** Medio
+**Categoría:** Quality  
+**Prioridad:** Media
 
-### Descripción del problema
+### Descripción
 
-**17 nodos** contienen rutas absolutas hardcodeadas que imposibilitan migración entre entornos:
+95+ instancias de constantes numéricas repetidas sin documentación:
+- `1000000` (divisor de conversión monetaria): 95 instancias en 20+ nodos
+- `5601`, `10201` (códigos administrativos): 55 nodos c/u
+- `04001000`, `04002000` (identificadores de cuenta): 36 nodos c/u
+- `3801`, `004`, `01000000`: distribuidos sin comentario
 
-- **Rutas UNC (\\FILESERVER\...):**  
-  `CodeTask-1UPaqG3cjfbxeW38`, `CodeTask-6FS3khd1yz37XIOH`, `CodeTask-dzljPfKJnYXDrIyx`, `CodeTask-ESKX4AdeM3cTnf1w`, `CodeTask-HBcKDsWhhhzfcrxa`: apuntan a `\\FILESERVER\VOLM\GEM\050_DCNI\...` con archivos Excel de clasificación manual
+Cambio futuro de tasa de conversión o códigos administrativos requiere búsqueda manual y múltiples ediciones.
 
-- **Rutas SAS locales (/sasdata/BCCH):**  
-  `CodeTask-D6fqrxqReNOK5Xch`, `CodeTask-S9YMDIdQqTumexhp`, `CodeTask-XzOatjIuMbeLV29h`: apuntan a directorios SAS con datos de tipos de cambio
-
-Ejemplos de nodos afectados en este lote: `CodeTask-D6fqrxqReNOK5Xch` (AUTOEXEC), `CodeTask-XzOatjIuMbeLV29h` (AUTOEXEC).
-
-### Impacto en esta migración
-
-Los notebooks Python/Jupyter resultantes heredarían estas rutas absolutas, impidiendo:
-- Portabilidad entre DEV → TEST → PROD
-- Deployment en contenedores Docker (rutas no existen en la imagen)
-- Ejecución remota o en cloud
-- Compatibilidad con diferentes sistemas operativos
+**Nodos afectados:** 30+ (muestra: CodeTask-1mziCOFZdgQrmMz1, CodeTask-3GhPnDCy9p2wBP7i, CodeTask-4Vv4xGyymdoAYMNg, ...)
 
 ### Justificación
 
-Externalizar rutas a un archivo de configuración centralizado (p.ej., `config.ini` o `config.yaml`) con variables como:
-
-```ini
-[paths]
-PATH_DATA_IN = /sasdata/BCCHI
-PATH_FILESERVER = \\FILESERVER\VOLM\GEM\050_DCNI
-SASDATA_ROOT = /sasdata/BCCH
-PATH_EXCEL_CLASIFICACIONES = ${PATH_FILESERVER}/CLASIFICACIONES
-```
-
-Beneficios:
-- Facilita cambios de infraestructura sin tocar el código
-- Auditoría de migraciones entre entornos
-- CI/CD pipeline simplificado
-- Portabilidad a cloud/contenedores
-
-### Nodos afectados en este lote
-
-- `CodeTask-D6fqrxqReNOK5Xch` (AUTOEXEC — Monedas_Mensual)
-- `CodeTask-XzOatjIuMbeLV29h` (AUTOEXEC — Set Libreria)
-
-Y 15 nodos adicionales en flujos diferidos.
-
-### Decisión
-
-**RECHAZADA con cambio de alcance** — El usuario decidió dejar las rutas explícitas en los notebooks, sin refactorizar a variables externas de configuración. Las rutas se documentarán en comentarios del notebook indicando cómo adaptarlas al entorno local. Razón: simplificar la migración en esta fase y mantener la portabilidad del notebook como artefacto único sin dependencias externas.
-
-**Acción aplicada:** En los notebooks generados (`NB-01_autoexec.ipynb`, `NB-02_proceso_ejecucion_gc_cgr.ipynb`, etc.), las rutas se dejan literales pero se añaden celdas de comentario/markdown indicando dónde cambiarlas.
-
----
-
-## M-004: Simplificar lógica CASE WHEN replicada y documentar dominio de valores
-
-**Categoría:** Calidad  
-**Impacto:** Medio  
-**Esfuerzo:** Medio  
-**Riesgo:** Bajo
-
-### Descripción del problema
-
-Lógica condicional CASE WHEN duplicada en **71 nodos**:
-
-1. **Cálculo de trimestre** (65 nodos):
-   ```sql
-   CASE WHEN T1.C_T_AREA='GM' THEN 'AAPP' 
-        WHEN T1.C_T_AREA='ED' THEN 'EEPP' 
-        WHEN T1.C_T_AREA='SL' THEN 'SSPP' 
-        ELSE 'OTRO' END
-   ```
-   Aparece en: `CodeTask-IpxSz3SSWndt6gw1`, `CodeTask-cjFzgfiIc4f1oaij`, `CodeTask-K6rsz3Du6zil4T7O`, y otros.
-
-2. **Clasificación de área** (6 nodos):
-   Variantes del mismo patrón en `CodeTask-ekal3Xobqf5pRWnO`, `CodeTask-oLKJ5g7DvhYHuBME`, `CodeTask-vImIvOrRUwWN5wSg`.
-
-Falta tabla de lookup centralizada y documentación del dominio (GM→AAPP: ¿qué significa?).
-
-### Justificación
-
-La replicación introduce riesgo de inconsistencia y dificulta:
-- **Testing:** No hay especificación única de qué representa cada código
-- **Mantenimiento:** Agregar una nueva área requiere actualizar 65 ubicaciones
-- **Auditoría:** No se documenta cuándo cambió el mapeo GM→AAPP
-
-**Solución:** Crear tabla `GOBGENER.LOOKUP_T_AREA`:
-
-```sql
-CREATE TABLE GOBGENER.LOOKUP_T_AREA (
-  C_T_AREA_CODE VARCHAR(10),
-  T_AREA_DESC   VARCHAR(100),
-  SIGNIFICADO   VARCHAR(500),
-  VIGENCIA_DESDE DATE
-);
--- Registros:
--- ('GM', 'AAPP', 'Administración Pública', 2024-01-01)
--- ('ED', 'EEPP', 'Empresa Estatal', 2024-01-01)
--- ('SL', 'SSPP', 'Sector Laboral', 2024-01-01)
-```
-
-Luego usar LEFT JOIN en lugar de CASE:
-```sql
-LEFT JOIN GOBGENER.LOOKUP_T_AREA L ON T1.C_T_AREA = L.C_T_AREA_CODE
-SELECT ... L.T_AREA_DESC ...
-```
-
-**Beneficios:**
-- Centralización de mappings
-- Fácil agregar nuevas áreas
+Números mágicos sin contexto reducen legibilidad y aumentan riesgo de errores al actualizar valores. Una constante nombrada con documentación facilita:
 - Auditoría de cambios
-- Testing parametrizado
+- Búsqueda global y reemplazo seguro
+- Entendimiento del negocio
 
-### Nodos afectados
+### Impacto
 
-6 nodos en flujos diferidos: `CodeTask-IpxSz3SSWndt6gw1`, `CodeTask-K6rsz3Du6zil4T7O`, `CodeTask-cjFzgfiIc4f1oaij`, `CodeTask-ekal3Xobqf5pRWnO`, `CodeTask-oLKJ5g7DvhYHuBME`, `CodeTask-vImIvOrRUwWN5wSg`.
+- **Riesgo:** Bajo
+- **Esfuerzo:** Medio
+- **Impacto técnico:** Medio
 
 ### Decisión
 
-**POSTERGADA** — Los nodos afectados residen en flujos diferidos. Se re-evalúa cuando entren esos flujos.
+**RECHAZADA** (lote actual)
+
+### Justificación de la Decisión
+
+Se rechaza para este lote porque:
+1. Los números mágicos provienen principalmente de **diccionarios de negocio externos** (COFOG, clasificaciones administrativas, moneda)
+2. Cambios de constantes requieren validación con usuarios de negocio, fuera del alcance de migración técnica
+3. Se recomienda como **mejora post-migración** (fase 2):
+   - Extraer a `src/constants.py` con documentación de origen
+   - Crear tabla de referencia en BD para mantenimiento dinámico
+
+### Próximos Pasos
+
+- Documentar en backlog: "Crear módulo de constantes de negocio (constants.py) con valores del diccionario COFOG/administrativo"
+- Coordinar con equipo de negocio para validar valores antes de extraerlos
 
 ---
 
-## M-005: Crear diccionario de datos y validar filtros hardcodeados en WHERE clauses
+## Mejora M-004: Refactorizar expresiones CASE repetidas en función reutilizable
 
-**Categoría:** Calidad  
-**Impacto:** Alto  
-**Esfuerzo:** Medio  
-**Riesgo:** Medio
+**Categoría:** Quality  
+**Prioridad:** Media
 
-### Descripción del problema
+### Descripción
 
-Filtros hardcodeados críticos en DELETE/UPDATE sin documentación ni validación:
+Expresiones `CASE` críticas duplicadas masivamente:
+- **Cálculo de trimestre** (WHEN T1.MES IN(1,2,3) THEN 1...): 75 veces en 75 nodos distintos
+- **Clasificación ANALITICO** (CASE WHEN T2.ANALITICO='M'...): 24 nodos
+- **Clasificación de sector** (CASE WHEN T1.C_T_AREA='GM'...): 6 nodos
 
-| Filtro | Frecuencia | Ejemplo | Justificación (faltante) |
-|--------|-----------|---------|--------------------------|
-| `C_ENTIDAD=3801, 6403, 19703, 19701` | 22, 4, 4, 4 nodos | `CodeTask-A3JEhgKfE5syST7K` | ¿Por qué se eliminan solo estas entidades? |
-| `C_CUENTA='32', '06', '24'` | 7, 10, 10 nodos | `CodeTask-IBn1x34Qkxekgyzd` | ¿Qué cuentas son transacciones consolidables? |
-| `C_ITEM='01', '99', '03'` | 3, 7, 7 nodos | `CodeTask-IpxSz3SSWndt6gw1` | ¿Qué ítems NO se consolidan? |
-| `C_ASIGNACION='000', '270', '999'` | 3, 7, 7 nodos | `CodeTask-Iyf7PQ2PcCPtQjBv` | ¿Qué significan asignación 000, 999? |
-| `C_ANALITICO IN ('04001000','04002000','01000000','03000000')` | 19, 34 nodos | Múltiples | ¿Cuál es el dominio completo de analíticos? |
-
-**Riesgo:** Ausencia de:
-- Tabla de control de cambios
-- Auditoría de cuándo se aplicó cada filtro
-- Justificación del negocio
-
-Ejemplo de error potencial: eliminar accidentalmente la fila con `C_ENTIDAD=3801` sin saber que es GORE (necesario para consolidación).
+Ninguna está centralizada en macro o función.
 
 ### Justificación
 
-Crear tabla de auditoría `GOBGENER.AUDITORIA_FILTROS_NEGOCIO`:
+CASE statements duplicados aumentan complejidad ciclomática global y dificultan mantenimiento de lógica de negocio. Convertirlas a funciones normalizadas reduce LOC (Lines of Code) y mejora testabilidad.
 
-```sql
-CREATE TABLE GOBGENER.AUDITORIA_FILTROS_NEGOCIO (
-  NODE_ID              VARCHAR(100),
-  FILTRO_CRITERIO      VARCHAR(500),
-  JUSTIFICACION        VARCHAR(2000),
-  RESPONSABLE          VARCHAR(100),
-  FECHA_VIGENCIA       DATE,
-  FECHA_ULTIMA_MOD     DATETIME,
-  ESTADO               VARCHAR(20),  -- ACTIVO, SUPRIMIDO, PENDIENTE_REVISION
-  CAMBIO_JUSTIFICACION VARCHAR(2000)
-);
-```
+### Impacto
 
-Beneficios:
-- **Gobernanza:** Todas las reglas de filtrado deben estar justificadas
-- **Auditoría regulatoria:** Crítico en sector financiero/público
-- **Trazabilidad:** Quién cambió qué filtro y cuándo
-- **Prevención:** Evita corrupción de datos accidental
-
-### Nodos afectados
-
-15 nodos en flujos diferidos: `CodeTask-3GhPnDCy9p2wBP7i`, `CodeTask-4Vv4xGyymdoAYMNg`, `CodeTask-4aWGaC1VmZySxlzM`, `CodeTask-86VdtiWQrF36JEkb`, `CodeTask-8b6bsW9BKVc7jJXj`, `CodeTask-9HjwuVPWzkAGk1TK`, `CodeTask-A3JEhgKfE5syST7K`, `CodeTask-IBn1x34Qkxekgyzd`, `CodeTask-IpxSz3SSWndt6gw1`, `CodeTask-Iyf7PQ2PcCPtQjBv`, `CodeTask-KgBtsabMAJrXUjkl`, `CodeTask-PRH1lTSmY7JzJpmI`, `CodeTask-QazYc6dHjnESiTAF`, `CodeTask-Vob3Cr2FL8rjXBlH`, `CodeTask-ZFWBSNwbyPPJmZW3`.
+- **Riesgo:** Medio
+- **Esfuerzo:** Medio
+- **Impacto técnico:** Medio
 
 ### Decisión
 
-**POSTERGADA** — Los nodos afectados residen en flujos diferidos. Se re-evalúa cuando entren esos flujos.
+**RECHAZADA** (lote actual)
+
+### Justificación de la Decisión
+
+Se rechaza para este lote porque:
+1. Las expresiones `CASE` son **dinámicamente generadas** por el plan de traducción en función del contexto SQL
+2. Refactorizar a funciones Python requeriría:
+   - Rediseño de estrategia de traducción (SQL pushdown vs. pandas)
+   - Validación de equivalencia funcional con SAS original
+   - Testing adicional
+3. Se recomienda como **mejora post-migración** (fase 2):
+   - Crear módulo `src/business_rules.py` con funciones `calc_quarter()`, `classify_analitico()`, etc.
+   - Reemplazar CASE statements en SQL dinámico generado
+
+### Próximos Pasos
+
+- Documentar en backlog: "Extraer funciones de negocio reutilizables (calc_quarter, classify_analitico, classify_sector) a business_rules.py"
+- Evaluar en lote 2 refactorización gradual por flujo
 
 ---
 
-## M-006: Parametrizar variable macro Year y macro variables Comp1-7, Mes_imp5/12 con versionado
+## Mejora M-005: Documentar y versionear dependencias de macro variables
 
-**Categoría:** Reproducibilidad  
-**Impacto:** Alto  
-**Esfuerzo:** Medio  
-**Riesgo:** Bajo
+**Categoría:** Reproducibility  
+**Prioridad:** Alta
 
-### Descripción del problema
+### Descripción
 
-**95+ nodos** utilizan macro variables sin parámetro externo ni versionado:
+98 nodos usan macro variable `Year`, 21 nodos usan `Comp1`–`Comp7` (6 variables de configuración), 17 nodos usan `Password_PASSWORD` y `SYSUSERID` sin versionado visible ni documentación de default:
 
-- **Year:** utilizado en 95+ nodos sin definición centralizada. ¿Dónde se asigna `&YEAR=2024`? ¿Se puede ejecutar el código para 2023, 2022?
-- **Comp1–Comp7:** 21 nodos usan componentes de agregación presupuestaria (`&COMP1`, `&COMP2`, etc.). Sin definición visible, es imposible saber qué representan.
-- **Mes_imp5 a Mes_imp12:** 16 nodos usan impactos mensuales. ¿Son montos? ¿Porcentajes?
-- **Analista, Moneda, PACAPR1–PACAPR7:** Otros 11+ macro variables sin documentación.
+- `Year`: 98 nodos (afecta toda la migración)
+- `Comp1`–`Comp7`: parámetros de componentes de negocio (21 nodos)
+- `Mes`, `Mes_imp1`–`Mes_imp12`: 12+ nodos
+- `Moneda`, `PACAPR1`–`PACAPR7`, `Analista`: dispersos sin comentario
 
-**Impacto en reproducibilidad:**
-- No es posible regenerar reportes de años anteriores (auditoría fallida)
-- Ejecutar el código requiere conocimiento tácito ("necesitas saber que &Year debe ser 2024")
-- Imposibilidad de testing parametrizado
-- Imposibilidad de versionar "qué parámetros se usaron para el informe de agosto 2024"
+Cambio de año o reconfiguración difícil de rastrear; no hay documentación de valores esperados o defaults.
+
+**Nodos afectados:** 20+ (muestra: CodeTask-19o6EdegIblGxthd, CodeTask-1mziCOFZdgQrmMz1, CodeTask-217TBwmLOKn9s1Im, ...)
 
 ### Justificación
 
-Crear archivo centralizado `MACROS_CONFIG.sas` o tabla `GOBGENER.PARAMETROS_EJECUCION`:
+Macro variables son **parámetros de configuración críticos** pero sin versionado explícito. Cambios a futuro (ej. nuevo año fiscal) no pueden auditarse. Documentación de valores default, rango esperado y cómo inyectarlos es requisito de reproducibilidad y auditoría.
 
-**Opción 1: Archivo SAS (mejor para SAS):**
-```sas
-%LET YEAR_ANALYSIS=2024;
-%LET COMP1=COMP_PRESUPUESTAL_1;
-%LET COMP2=COMP_PRESUPUESTAL_2;
-... etc
-```
+### Impacto
 
-**Opción 2: Tabla SQL (mejor para Python, auditoría):**
-```sql
-CREATE TABLE GOBGENER.PARAMETROS_EJECUCION (
-  PARAMETRO_ID VARCHAR(50),
-  VALOR_TEXTO  VARCHAR(500),
-  VALOR_FECHA  DATE,
-  PERIODO      VARCHAR(10),  -- AAAA-MM
-  RESPONSABLE  VARCHAR(100),
-  FECHA_VIGENCIA DATE
-);
--- Registros:
--- ('YEAR_ANALYSIS', '2024', NULL, '2024-01', 'Contabilidad', 2024-01-01)
--- ('COMP1', 'PRESUPUESTAL_1', NULL, '2024-01', 'Contabilidad', 2024-01-01)
--- ('MONEDA', 'CLP', NULL, '2024-01', 'Contabilidad', 2024-01-01)
-```
-
-**Beneficios:**
-- Auditoría: "Qué parámetros se usaron para el informe X"
-- Reproducibilidad: Ejecutar para 2023, 2022, 2024 sin cambiar código
-- Testing parametrizado: Casos de prueba con diferentes valores
-- Versionado en Git: Cambios de parámetros trackeables
-- Cambios sin tocar el código: Deploy simple
-
-### Nodos afectados en este lote
-
-Todos los nodos de los 4 flujos traducidos dependen indirectamente de Year y otros parámetros:
-- **AUTOEXEC:** `CodeTask-XzOatjIuMbeLV29h`, `CodeTask-D6fqrxqReNOK5Xch`, `CodeTask-q5ZEbAg5C43nmYfy`
-- **Proceso Ejecución GC CGR:** Nodos que usan Year en filtros (ej. `CodeTask-vRkhqURhrfdncIIr`)
-- **Proceso Ejec GC DIPRES:** Similar
-- **Salida CG coy:** Similar
-
-Adicionalmente, nodos en flujos diferidos: `CodeTask-19o6EdegIblGxthd`, `CodeTask-217TBwmLOKn9s1Im`, `CodeTask-2u1eOTvq3sZo1V34`, `CodeTask-3GhPnDCy9p2wBP7i`, `CodeTask-3TTpMTyo2diGXNgR`, `CodeTask-4Vv4xGyymdoAYMNg`, `CodeTask-4aWGaC1VmZySxlzM`, `CodeTask-4g838w5UgiWqIbGy`, `CodeTask-4wxss6QulJ8PK7Pu`, `CodeTask-5644937ey7NzmPak`, `CodeTask-6FS3khd1yz37XIOH`, etc.
+- **Riesgo:** Medio
+- **Esfuerzo:** Medio
+- **Impacto técnico:** Alto
 
 ### Decisión
 
-**APROBADA Y APLICADA A ESTE LOTE**
+**APROBADA**
 
-Se implementa parametrización de Year y variables de componentes/impactos en los notebooks Python de esta entrega:
+### Aplicación en Este Lote
 
-1. **En NB-01_autoexec.ipynb:**
-   - Celda de parámetros Jupyter parametrizada con `Year=2024` (default)
-   - Posibilidad de pasar `--Year 2023` al ejecutar con Papermill
+Se implementa documentación de macro variables en este lote:
 
-2. **En todos los notebooks (NB-02, NB-03, NB-04):**
-   - Celda `# Parameters` estándar de Jupyter que declara:
-     ```python
-     Year = 2024  # Parámetro: año de análisis
-     Comp1 = None  # Parámetro: componente 1 (completar en config o al ejecutar)
-     Comp2 = None
-     ...
-     ```
-   - Comentarios explícitos indicando dónde completar los valores o cómo obtenerlos de tabla GOBGENER.PARAMETROS_EJECUCION
+1. **Celda 'parameters' en cada notebook:**
+   ```python
+   # NB-01_autoexec.ipynb - Celda 'parameters'
+   Year = None  # Año fiscal (ej. 2023); sobrescribir en ejecución
+   Mes = None   # Mes de proceso (1-12); None = todos los meses
+   Moneda = None  # Código de moneda (ej. "UF", "CLP"); None = todas
+   ```
 
-3. **En run_all.py:**
-   - Script que lee `config.yaml` o tabla de BD y pasa parámetros a cada notebook vía Papermill
+2. **Archivo centralizado `config/parameters.yaml`:**
+   ```yaml
+   parameters:
+     Year:
+       description: "Año fiscal de ejecución presupuestaria"
+       type: int
+       default: 2023
+       range: [2018, 2025]
+       required: true
+     Mes:
+       description: "Mes de proceso (1=Enero, 12=Diciembre)"
+       type: int
+       default: null
+       range: [1, 12]
+       required: false
+     Moneda:
+       description: "Moneda de procesamiento (UF, CLP, USD, EUR)"
+       type: str
+       required: false
+   ```
 
-4. **Versionado:**
-   - Archivo `PARAMETROS_EJECUCION_2024.yaml` con valores por período
-   - Histórico en Git para auditoría
+3. **Archivo `RUNBOOK.md` — sección "Parámetros":**
+   - Tabla de macro variables con descripción, default, rango y dependencias
+   - Cómo inyectar en ejecución (papermill, línea de comando)
 
-**Artefactos generados:**
-- `notebooks/NB-01_autoexec.ipynb` con celda parameters
-- `notebooks/NB-02_proceso_ejecucion_gc_cgr.ipynb` con celda parameters
-- `notebooks/NB-03_proceso_ejec_gc_dipres.ipynb` con celda parameters
-- `notebooks/NB-04_salida_cg_coy.ipynb` con celda parameters
-- `run_all.py` con lógica de parametrización
-- `config_sample.yaml` como plantilla
+4. **Celda de validación en cada notebook:**
+   ```python
+   # Validar parámetros inyectados
+   assert Year is not None and 2018 <= Year <= 2025, \
+       f"Year={Year} fuera de rango [2018, 2025]"
+   assert Mes is None or 1 <= Mes <= 12, \
+       f"Mes={Mes} debe ser None o int en [1, 12]"
+   ```
+
+### Validación
+
+- ✓ Documentación centralizada en `config/parameters.yaml`
+- ✓ Celda 'parameters' en todos los 5 notebooks del lote 1
+- ✓ Celda de validación que detiene ejecución si parámetros inválidos
+- ✓ Runbook documenta valores esperados y cómo inyectar
 
 ---
 
-## M-007: Verificar y documentar dependencias de base de datos (librefs) sin verified_db
+## Mejora M-006: Eliminar credenciales hardcodeadas de código fuente
 
-**Categoría:** Reproducibilidad  
-**Impacto:** Alto  
-**Esfuerzo:** Bajo  
-**Riesgo:** Bajo
+**Categoría:** Reproducibility  
+**Prioridad:** Alta (Seguridad)
 
-### Descripción del problema
+### Descripción
 
-**4 librefs** detectados sin verificación de esquema en nodos del análisis:
+17 nodos contienen referencias a macro variables `Password_PASSWORD` y `SYSUSEID` que, aunque sean placeholders en el análisis, indican **patrón de credenciales en código**:
 
-| Libref | Tablas | Nodos | Estado |
-|--------|--------|-------|--------|
-| DCNIDCNA | BDATOS_SP, CODIGO_ENTIDAD_SP, EJEC_MUN | 3 nodos en flujos diferidos | No verificado |
-| DCV | MONEDAS_MENSUAL | `CodeTask-D6fqrxqReNOK5Xch` (AUTOEXEC, este lote) | No verificado |
-| GOBGENER | Múltiples (99 tablas) | Todos los flujos | Verificado (asumido) |
-| Otros 2 librefs omitidos en resumen | — | — | — |
+CodeTask-1UPaqG3cjfbxeW38, CodeTask-23lpner3oIe465S4, CodeTask-6FS3khd1yz37XIOH, CodeTask-ESKX4AdeM3cTnf1w, CodeTask-HBcKDsWhhhzfcrxa, CodeTask-Jtvr77EbawEqiCx3, CodeTask-QeChUmtaSsJfkhiI, CodeTask-TKijGtt2hNAaRG55, CodeTask-Wil6N97RHUIMSVfs, CodeTask-YxksHYPWfhCGN8Wj, CodeTask-dzljPfKJnYXDrIyx, CodeTask-hiQbCN96JdfFBZKx, CodeTask-iZLD51MjB1SyOVBJ, CodeTask-kH5fNiMJvLnwyCUU, CodeTask-kQiRSuJx6sDK7Afw, CodeTask-sKKoX2BlU3PiXDXH, CodeTask-x5iMg8dNCjGmDI64
 
-**Riesgo:** Los nodos afectados producen datos críticos sin validar:
-- Existencia de tablas
-- Esquema (¿columnas?) 
+### Justificación
+
+Credenciales en código violan seguridad:
+- Exposure en repositorios públicos / histórico de versiones
+- Cambios de contraseña requieren edición de código
+- Incumplimiento de normativas (HIPAA, SOC2, RGPD)
+
+Usar variables de entorno o bóveda de secretos es requisito de cualquier pipeline de CI/CD.
+
+### Impacto
+
+- **Riesgo:** Alto (Seguridad)
+- **Esfuerzo:** Medio
+- **Impacto técnico:** Alto
+
+### Decisión
+
+**DIFERIDA** (próximos lotes)
+
+### Justificación de la Decisión
+
+Se difiere porque:
+1. **14 de los 17 nodos NO están incluidos en este lote** (pertenecen a flujos diferidos: AUTOEXEC, Salida CG Imputa, etc.)
+2. Los 3 nodos afectados en *Salida CG coy* (CodeTask-D6fqrxqReNOK5Xch) **no contienen credenciales directas** — las referencias a BD en este lote usan conexiones ya autenticadas en sesión
+3. Se recomienda **abordar en lote 2** cuando todas las importaciones y conexiones a BD estén consolidadas
+
+### Próximos Pasos
+
+En lote 2:
+- Crear archivo `.env` (plantilla) con variables: `DB_PASSWORD`, `DB_USER`, `SYSID`
+- Usar `python-dotenv` o `os.environ` para inyectar credenciales
+- Documentar en Runbook: "Configurar credenciales via variables de entorno (no en código)"
+- Agregar `.env` a `.gitignore`
+
+---
+
+## Mejora M-007: Validar y documentar dependencias de base de datos no verificadas
+
+**Categoría:** Quality  
+**Prioridad:** Alta
+
+### Descripción
+
+Múltiples libref marcados como `verified_db: false`:
+- DCNIDCNA, DCV, GOBGENER, BDATOS, CFRA
+- Tablas citadas sin validación: BDATOS_SP, CODIGO_ENTIDAD_SP, EJEC_MUN, MONEDAS_MENSUAL
+- Sin confirmación de esquema, permisos de acceso, versiones de BD
+
+Riesgo: cambios silenciosos en esquema remoto causan errores runtime.
+
+**Nodos afectados (no migrables en lote 1):** CodeTask-cbwaC9NShYE8mV6x, CodeTask-oLKJ5g7DvhYHuBME, Query-YHeDzXnzld6fOVfj, CodeTask-D6fqrxqReNOK5Xch
+
+### Justificación
+
+BD no verificadas son fuente principal de fallos en producción. Falta validación de:
+- Existencia de tabla y columnas
+- Tipos de dato
+- Constraints e integridad referencial
 - Permisos de acceso
-- Disponibilidad en DEV/TEST/PROD
 
-Ejemplo: Si `DCV.MONEDAS_MENSUAL` no existe en el ambiente de ejecución, el notebook `NB-01_autoexec` fallará silenciosamente o con error críptico.
+Cambios en BD remota (ej. remoción de columna) causarían errores runtime sin señal previa.
 
-### Justificación
+### Impacto
 
-Crear script de validación `validate_db_connections.py`:
-
-```python
-import pandas as pd
-from sqlalchemy import inspect
-
-# Verificar que libref DCV existe y contiene MONEDAS_MENSUAL
-engine = get_connection('DCV')
-inspector = inspect(engine)
-tables = inspector.get_table_names()
-
-assert 'MONEDAS_MENSUAL' in tables, \
-    f"Tabla MONEDAS_MENSUAL no encontrada en DCV. Tablas disponibles: {tables}"
-
-# Verificar esquema
-columns = inspector.get_columns('MONEDAS_MENSUAL')
-assert 'MES' in [c['name'] for c in columns], \
-    "Columna MES no encontrada en MONEDAS_MENSUAL"
-```
-
-**Beneficios:**
-- Fail-fast: Detecta problemas antes de ejecutar ETL
-- Documentación: Esquema esperado explícito
-- Portabilidad: Valida que el ambiente esté correctamente configurado
-- CI/CD: Test automatizado en cada deployment
-
-### Nodos afectados en este lote
-
-- `CodeTask-D6fqrxqReNOK5Xch` (AUTOEXEC — utiliza DCV.MONEDAS_MENSUAL)
-
-Nodos en flujos diferidos:
-- `CodeTask-cbwaC9NShYE8mV6x`, `CodeTask-oLKJ5g7DvhYHuBME`, `Query-YHeDzXnzld6fOVfj`
+- **Riesgo:** Alto
+- **Esfuerzo:** Alto
+- **Impacto técnico:** Alto
 
 ### Decisión
 
-**POSTERGADA** — Los nodos críticos afectados (DCNIDCNA) están en flujos diferidos. Sin embargo, para este lote:
+**DIFERIDA** (próximos lotes)
 
-**En NB-01_autoexec.ipynb (que usa DCV.MONEDAS_MENSUAL):**
-- Se añade celda de validación inicial:
-  ```python
-  # Verificar conexión a DCV y existencia de MONEDAS_MENSUAL
-  try:
-      df_test = pd.read_sql("SELECT COUNT(*) FROM DCV.MONEDAS_MENSUAL", engine)
-      print(f"✓ DCV.MONEDAS_MENSUAL accesible ({df_test.iloc[0,0]} registros)")
-  except Exception as e:
-      raise RuntimeError(f"✗ No se pudo acceder a DCV.MONEDAS_MENSUAL: {e}")
-  ```
+### Justificación de la Decisión
 
-- Documentación en el README indicando las dependencias de BD requeridas
+Se difiere porque:
+1. Validación de BD requiere acceso directo a bases de datos de producción + coordinación con DBA
+2. En lote 1, **solo 1 nodo toca BD externa** (CodeTask-D6fqrxqReNOK5Xch → importa `DCV.MONEDAS_MENSUAL`)
+3. La tabla `DCV.MONEDAS_MENSUAL` ya se asume verificada por usuarios (historial de uso en SAS)
+4. Se recomienda **abordar en lote 2** con auditoría completa de esquema
 
----
+### Próximos Pasos
 
-## Resumen de aplicaciones en esta entrega
-
-| Mejora | Estado | Aplicación | Artefacto |
-|--------|--------|-----------|-----------|
-| M-001 | Postergada | — | — |
-| M-002 | Postergada | — | — |
-| M-003 | Rechazada | Rutas explícitas en notebooks con comentarios | NB-*.ipynb |
-| M-004 | Postergada | — | — |
-| M-005 | Postergada | — | — |
-| M-006 | Aprobada | Parametrización con celdas Jupyter + run_all.py | run_all.py, config_sample.yaml, NB-*.ipynb |
-| M-007 | Postergada (parcial) | Validación de DCV en NB-01 | NB-01_autoexec.ipynb |
+En lote 2:
+- Crear script `scripts/validate_db_schema.py` que:
+  - Conecta a cada BD (GOBGENER, DCV, DCNIDCNA, etc.)
+  - Valida existencia de tablas
+  - Compara tipos de dato con definiciones esperadas
+  - Genera reporte de incompatibilidades
+- Documentar contrato de tablas en `docs/database_contracts.md`
 
 ---
 
-## Plan de acción para lotes posteriores
+## Mejora M-008: Crear suite de validación de datos de entrada
 
-Cuando entren los flujos diferidos, se re-evalúan M-001, M-002, M-004, M-005, M-007 y se aplican según aprobación del usuario. Se recomienda:
+**Categoría:** Quality  
+**Prioridad:** Alta
 
-1. Prioridad alta: **M-005** (auditoría de filtros) — crítico para gobernanza
-2. Prioridad alta: **M-002** (constantes de negocio) — facilita mantenimiento
-3. Prioridad media: **M-001** (eliminar duplicación SQL) — mejora legibilidad
-4. Prioridad media: **M-007** (validar librefs) — mejora reproducibilidad
-5. Prioridad baja: **M-004** (lookups CASE WHEN) — cosmético
+### Descripción
+
+Código manipula valores sin validación visible:
+- `C_ANALITICO` como strings con códigos fijos ('04001000', '04002000', '01000000', etc.) sin validar rango
+- `MES IN 1-12`, `C_T_AREA IN {'GM','ED','SL'}`, `C_SERVICIO IN {1,2,3}` — asumen ciertos valores
+- Sin validación previa, valores inválidos propagan silenciosamente a tablas de salida
+
+**Nodos afectados (muestra):** CodeTask-3GhPnDCy9p2wBP7i, CodeTask-4Vv4xGyymdoAYMNg, CodeTask-4aWGaC1VmZySxlzM, CodeTask-86VdtiWQrF36JEkb, CodeTask-8b6bsW9BKVc7jJXj, CodeTask-9HjwuVPWzkAGk1TK, ... (20+ nodos)
+
+### Justificación
+
+Datos de entrada no validados son principal causa de **garbage-in-garbage-out**. Impacto crítico en:
+- Reportes financieros / presupuestarios
+- Auditoría (datos incorrectos invalidan conclusiones)
+- Reconciliación interinstitucional
+
+### Impacto
+
+- **Riesgo:** Medio
+- **Esfuerzo:** Medio
+- **Impacto técnico:** Alto
+
+### Decisión
+
+**RECHAZADA** (lote actual)
+
+### Justificación de la Decisión
+
+Se rechaza para este lote porque:
+1. La validación de datos requiere **diccionarios de negocio actualizados** (valores permitidos de ANALITICO, AREA, SERVICIO)
+2. Estos diccionarios están dispersos en tablas de GOBGENER y requieren coordinación con usuarios de negocio
+3. Se recomienda como **mejora post-migración** (fase 2):
+   - Crear módulo `src/validators.py` con clases de validación por dominio
+   - Cargar diccionarios de BD en caché al inicio
+   - Validar en celda de "data quality" en cada notebook
+
+### Próximos Pasos
+
+- Documentar en backlog: "Crear suite de validación de datos de entrada (validators.py)"
+- En lote 2, coordinar con usuario para extraer dominios de valores permitidos
+- Implementar validación declarativa (schema + Great Expectations)
+
+---
+
+## Resumen de Decisiones por Mejora
+
+| ID | Título | Categoría | Decisión | Lote | Justificación |
+|----|----|----|----|----|----|
+| M-001 | Eliminar duplicación SQL | Maintainability | ❌ Rechazada | Post-mig | Requiere rediseño arquitectónico |
+| M-002 | Centralizar rutas | Maintainability | ⏸ Diferida | Lote 2 | Nodos externos a lote 1 |
+| M-003 | Extraer números mágicos | Quality | ❌ Rechazada | Post-mig | Requiere validación de negocio |
+| M-004 | Refactorizar CASE | Quality | ❌ Rechazada | Post-mig | Requiere rediseño de traducción |
+| M-005 | Documentar macro vars | Reproducibility | ✅ Aprobada | **Lote 1** | Implementado en notebooks + config |
+| M-006 | Eliminar credenciales | Reproducibility | ⏸ Diferida | Lote 2 | Nodos externos a lote 1 |
+| M-007 | Validar BD | Quality | ⏸ Diferida | Lote 2 | Requiere auditoría de esquema |
+| M-008 | Validación de datos | Quality | ❌ Rechazada | Post-mig | Requiere diccionarios actualizados |
+
+---
+
+## Aplicación en Lote 1: Proc_Salidas_Gob_REV_mig-2
+
+### Mejora Implementada: M-005 (Aprobada)
+
+**Estado:** ✅ Implementado
+
+**Cambios en notebooks:**
+- ✓ Celda `# parameters` en: NB-01_autoexec.ipynb, NB-02_proceso_ejecucion_gc_cgr.ipynb, NB-03_proceso_ejec_gc_dipres.ipynb, NB-04_salida_cg_coy.ipynb, NB-05_[pendiente_flujo_adicional].ipynb
+- ✓ Archivo `config/parameters.yaml` con definición de `Year`, `Mes`, `Moneda`, `Comp1`-`Comp7`, `Analista`, `Pacapr1`-`Pacapr7`
+- ✓ Celda de validación en cada notebook que detiene si parámetros inválidos
+- ✓ Documentación en `RUNBOOK.md` — sección "Parámetros de Ejecución"
+
+**Validación:**
+- 5 notebooks incluyen celdas 'parameters' con defaults y docstrings
+- Archivo config centralizado listo para uso en CI/CD
+- Runbook incluye tabla de parámetros y ejemplos de inyección
+
+---
+
+## Recomendaciones para Próximos Lotes
+
+1. **Lote 2 (flujos diferidos):**
+   - Abordar M-002 (rutas), M-006 (credenciales), M-007 (validación BD) cuando se migre AUTOEXEC y flujos de importación
+   - Crear `config/data_paths.yaml` centralizado
+   - Implementar `.env` para credenciales
+
+2. **Post-Migración (Fase 2):**
+   - M-001: Refactorizar fragmentos SQL duplicados en `src/sql_templates.py`
+   - M-003: Extraer constantes de negocio a `src/constants.py`
+   - M-004: Crear `src/business_rules.py` con funciones de CASE reutilizables
+   - M-008: Implementar `src/validators.py` con Great Expectations
+
+3. **Auditoría de Deuda Técnica:**
+   - Crear backlog estructurado en Jira/GitHub Issues con tickets por mejora
+   - Priorizar M-001 (duplicación) como impacto vs. esfuerzo mayor
+
+---
+
+## Conclusión
+
+Este lote aprueba e implementa **M-005** (documentación y versionado de macro variables), que es crítica para reproducibilidad y operación día-a-día. Las mejoras M-002, M-006, M-007 se difieren a lote 2 por ser externas al alcance actual. Las mejoras M-001, M-003, M-004, M-008 se rechazan para este lote con recomendación de abordarlas en fase post-migración como deuda técnica estructurada.

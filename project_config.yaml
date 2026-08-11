@@ -81,7 +81,7 @@ llm:
   # Solo con provider=foundry: el <resource> de
   # https://<resource>.services.ai.azure.com — infraestructura, no secreto.
   # `init` lo copia de ANTHROPIC_FOUNDRY_RESOURCE si está en el entorno.
-  foundry_resource: "bc-pibot"
+  foundry_resource: "aifp-smena-resource"
   # Las API keys NO van acá (este archivo se commitea): van en .env o en el
   # entorno — ANTHROPIC_API_KEY / ANTHROPIC_FOUNDRY_API_KEY. Ver .env.example.
   #

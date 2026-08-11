@@ -1,5 +1,4 @@
 # Entorno destino de los notebooks generados — emitido por el ensamblador
 numpy
 pandas
-pyxlsb
 sqlalchemy
