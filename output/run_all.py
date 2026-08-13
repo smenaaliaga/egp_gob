@@ -11,6 +11,10 @@ import argparse, os, subprocess, sys
 
 NOTEBOOKS = [
     'NB-04_salida_cg_coy.ipynb',
+    'NB-04_salida_cg_coy_p1.ipynb',
+    'NB-04_salida_cg_coy_p2.ipynb',
+    'NB-07_salida_cnf_trim_cgr.ipynb',
+    'NB-08_salida_cnf_trim_dip.ipynb',
 ]
 
 def main():
